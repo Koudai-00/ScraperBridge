@@ -268,6 +268,15 @@ class MetadataExtractor:
                     'Accept-Language': 'en-US,en;q=0.9',
                     'Referer': 'https://www.tiktok.com/',
                 }
+            },
+            # Approach 5: Try TikTok embed URL (similar to Instagram approach)
+            {
+                'url': f"https://www.tiktok.com/oembed?url={url}",
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/json,text/plain,*/*',
+                    'Referer': 'https://www.tiktok.com/',
+                }
             }
         ]
         
@@ -293,6 +302,33 @@ class MetadataExtractor:
                 
                 if not html_text:
                     html_text = content.decode('utf-8', errors='replace')
+                
+                # Special handling for oEmbed JSON response
+                if approach['url'].startswith('https://www.tiktok.com/oembed'):
+                    try:
+                        import json
+                        json_data = json.loads(html_text)
+                        if json_data.get('title'):
+                            title = json_data['title'].strip()
+                            thumbnail_url = json_data.get('thumbnail_url')
+                            author_name = json_data.get('author_name')
+                            if not author_name:
+                                # Extract username from URL if not provided
+                                username_match = re.search(r'tiktok\.com/@([^/]+)', url)
+                                if username_match:
+                                    author_name = f"@{username_match.group(1)}"
+                            
+                            logging.debug(f"TikTok oEmbed extraction results: title='{title}', thumbnail='{thumbnail_url}', author='{author_name}'")
+                            return {
+                                "platform": "tiktok",
+                                "unique_video_id": video_id,
+                                "title": title,
+                                "thumbnailUrl": thumbnail_url,
+                                "authorName": author_name
+                            }
+                    except (json.JSONDecodeError, TypeError, AttributeError, KeyError) as e:
+                        logging.debug(f"Failed to parse oEmbed response: {e}")
+                        continue
                 
                 soup = BeautifulSoup(html_text, 'html.parser')
                 
@@ -321,20 +357,35 @@ class MetadataExtractor:
                 
                 # Method 1: Extract title from various sources
                 title_sources = [
+                    # First try TikTok-specific meta tags
                     soup.find('meta', property='og:title'),
-                    soup.find('meta', attrs={'name': 'title'}),
-                    soup.find('title'),
-                    soup.find('meta', property='twitter:title')
+                    soup.find('meta', property='og:description'),
+                    soup.find('meta', attrs={'name': 'description'}),
+                    soup.find('meta', attrs={'name': 'twitter:title'}),
+                    soup.find('meta', attrs={'name': 'twitter:description'}),
+                    # Also try the title tag as fallback
+                    soup.find('title')
                 ]
                 
                 for source in title_sources:
                     if source:
+                        content = None
                         if hasattr(source, 'get') and source.get('content'):
-                            title = source.get('content').strip()
-                            break
+                            content = source.get('content').strip()
                         elif hasattr(source, 'get_text') and source.get_text():
-                            title = source.get_text().strip()
-                            break
+                            content = source.get_text().strip()
+                        
+                        if content:
+                            # Clean up TikTok title format
+                            if content.startswith('TikTok ·'):
+                                # Skip generic TikTok titles like "TikTok · 名無し"
+                                if '名無し' not in content and 'Untitled' not in content:
+                                    title = content.replace('TikTok ·', '').strip()
+                                    break
+                            elif content != 'TikTok' and len(content) > 6:
+                                # Use content if it's not just "TikTok" and has meaningful length
+                                title = content
+                                break
                 
                 # Method 2: Extract thumbnail from various sources
                 thumbnail_sources = [
@@ -378,17 +429,50 @@ class MetadataExtractor:
                         if script.string and len(script.string) > 100:
                             script_text = script.string
                             # Look for TikTok specific data patterns
-                            if '"title"' in script_text and '"video"' in script_text:
+                            if '"title"' in script_text or '"desc"' in script_text or '"video"' in script_text:
                                 try:
-                                    # Try to extract from JSON data
+                                    # Try multiple approaches to extract from script data
                                     import json
-                                    # Look for JSON-like patterns
-                                    json_match = re.search(r'\{[^{}]*"title"[^{}]*\}', script_text)
-                                    if json_match:
-                                        json_data = json.loads(json_match.group())
-                                        if not title and 'title' in json_data:
-                                            title = json_data['title']
+                                    
+                                    # Approach 1: Look for title in JSON data
+                                    title_patterns = [
+                                        r'"title":\s*"([^"]+)"',
+                                        r'"desc":\s*"([^"]+)"',
+                                        r'"description":\s*"([^"]+)"',
+                                    ]
+                                    
+                                    for pattern in title_patterns:
+                                        match = re.search(pattern, script_text)
+                                        if match and not title:
+                                            potential_title = match.group(1).strip()
+                                            # Filter out generic or empty titles
+                                            if (potential_title and 
+                                                len(potential_title) > 3 and 
+                                                potential_title not in ['TikTok', '名無し', 'Untitled', ''] and
+                                                not potential_title.startswith('TikTok ·')):
+                                                title = potential_title
+                                                logging.debug(f"Found title in script data: {title}")
+                                                break
+                                    
+                                    # Approach 2: Look for JSON objects with title
+                                    json_matches = re.finditer(r'\{[^{}]*"title"[^{}]*\}', script_text)
+                                    for json_match in json_matches:
+                                        try:
+                                            json_data = json.loads(json_match.group())
+                                            if not title and 'title' in json_data:
+                                                potential_title = json_data['title'].strip()
+                                                if (potential_title and 
+                                                    len(potential_title) > 3 and
+                                                    potential_title not in ['TikTok', '名無し', 'Untitled'] and
+                                                    not potential_title.startswith('TikTok ·')):
+                                                    title = potential_title
+                                                    break
+                                        except (json.JSONDecodeError, TypeError, AttributeError):
+                                            continue
+                                            
+                                    if title:
                                         break
+                                        
                                 except (json.JSONDecodeError, TypeError, AttributeError):
                                     continue
                 
