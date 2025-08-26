@@ -346,9 +346,15 @@ class MetadataExtractor:
                 
                 # Log some meta tags for debugging
                 meta_tags = soup.find_all('meta')
-                for j, tag in enumerate(meta_tags[:5]):  # Log first 5 meta tags
+                for j, tag in enumerate(meta_tags):  # Log all meta tags to find missing titles
                     if tag.get('property') or tag.get('name'):
-                        logging.debug(f"TikTok Approach {i+1} Meta tag {j}: {tag}")
+                        content = tag.get('content', '')
+                        if j < 10:  # Show first 10 tags
+                            logging.debug(f"TikTok Approach {i+1} Meta tag {j}: {tag}")
+                        # Also log any tags that might contain title information
+                        if ('title' in str(tag).lower() or 'description' in str(tag).lower() or 
+                            'og:' in str(tag).lower() or 'twitter:' in str(tag).lower()):
+                            logging.debug(f"TikTok Approach {i+1} Title-related tag: {tag}")
                 
                 # Extract metadata from meta tags
                 title = None
