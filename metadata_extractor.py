@@ -34,6 +34,10 @@ class MetadataExtractor:
         if not url:
             raise ValueError("URL cannot be empty")
         
+        # Check if it's a YouTube playlist
+        if self._is_youtube_playlist(url):
+            return self._extract_youtube_playlist_metadata(url)
+        
         # Determine platform
         platform = self._detect_platform(url)
         
@@ -319,4 +323,81 @@ class MetadataExtractor:
             "title": title,
             "thumbnailUrl": thumbnail_url,
             "authorName": author_name
+        }
+    
+    def _is_youtube_playlist(self, url: str) -> bool:
+        """Check if the URL is a YouTube playlist"""
+        return "list=" in url.lower() and ("youtube.com" in url.lower() or "youtu.be" in url.lower())
+    
+    def _extract_youtube_playlist_metadata(self, url: str) -> dict:
+        """Extract metadata from YouTube playlist URLs"""
+        logging.info(f"Extracting YouTube playlist metadata from: {url}")
+        
+        # Extract playlist ID
+        playlist_id = self._extract_playlist_id(url)
+        if not playlist_id:
+            raise ValueError("Could not extract YouTube playlist ID from URL")
+        
+        # Check if YouTube API key is available
+        if not self.youtube_api_key:
+            raise ValueError("YouTube API key is required for playlist processing")
+        
+        # Get playlist videos using YouTube Data API
+        return self._get_youtube_playlist_videos(playlist_id)
+    
+    def _extract_playlist_id(self, url: str) -> str:
+        """Extract YouTube playlist ID from URL"""
+        if "list=" in url:
+            # Extract everything after 'list='
+            parts = url.split('list=')
+            if len(parts) > 1:
+                # Get the playlist ID (everything up to the next & or end of string)
+                playlist_id = parts[1].split('&')[0]
+                return playlist_id
+        return ""
+    
+    def _get_youtube_playlist_videos(self, playlist_id: str) -> dict:
+        """Get videos from YouTube playlist using YouTube Data API"""
+        api_url = "https://www.googleapis.com/youtube/v3/playlistItems"
+        params = {
+            'part': 'snippet',
+            'playlistId': playlist_id,
+            'key': self.youtube_api_key,
+            'maxResults': 50  # Maximum 50 videos as specified in the requirements
+        }
+        
+        response = self.session.get(api_url, params=params, timeout=15)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        if not data.get('items'):
+            raise ValueError("Playlist not found or is empty")
+        
+        # Extract video list
+        video_list = []
+        for item in data.get('items', []):
+            snippet = item.get('snippet', {})
+            video_id = snippet.get('resourceId', {}).get('videoId')
+            if video_id:
+                video_info = {
+                    'title': snippet.get('title'),
+                    'videoUrl': f"https://www.youtube.com/watch?v={video_id}",
+                    'thumbnailUrl': snippet.get('thumbnails', {}).get('high', {}).get('url'),
+                    'unique_video_id': video_id
+                }
+                video_list.append(video_info)
+        
+        # Get playlist info from the first item
+        first_item = data['items'][0]['snippet'] if data['items'] else {}
+        playlist_title = first_item.get('channelTitle', 'YouTube Playlist')
+        
+        return {
+            "platform": "youtube_playlist",
+            "unique_video_id": playlist_id,
+            "title": f"プレイリスト: {playlist_title}",
+            "thumbnailUrl": video_list[0].get('thumbnailUrl') if video_list else None,
+            "authorName": first_item.get('channelTitle'),
+            "playlist_videos": video_list,
+            "video_count": len(video_list)
         }

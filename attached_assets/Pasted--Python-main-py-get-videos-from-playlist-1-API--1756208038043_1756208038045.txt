@@ -1,0 +1,62 @@
+ 依頼書を受け取ったPythonサーバー（`main.py`）の`get_videos_from_playlist`関数が、作業の準備を始めます。
+
+    1.  **APIキーの確認:**
+        まず、Replitの金庫（Secrets）に保管されている、**`YOUTUBE_API_KEY`**という**「Googleとの通信許可証」**を取り出します。もしこれがなければ、処理は中断されます。
+
+    2.  **再生リストIDの抽出:**
+        受け取ったURL全体の中から、**最も重要な部分である再生リストID**（`list=`の後ろにある`PL...`から始まる文字列）だけを、プログラム（`url.split('list=')[1]...`）で正確に抜き出します。
+
+*   **役割:**
+    再生リスト専門家は、交渉に必要な「許可証」と「案件番号（再生リストID）」を準備します。
+
+---
+
+#### **ステップ3：【公式な問い合わせ】Pythonサーバー → YouTube Data API**
+
+*   **何が起きるか:**
+    ここが**最も重要なステップ**です。Pythonサーバーは、Googleの公式な作法に則って、**「playlistItems:list」**という機能を持つ、特別なURLを組み立てます。
+
+    ```
+    https://www.googleapis.com/youtube/v3/playlistItems
+      ?part=snippet                  // ← 動画の基本情報（タイトル、IDなど）をください
+      &playlistId={再生リストID}     // ← この案件番号のリストについてです
+      &key={APIキー}                 // ← これが私の許可証です
+      &maxResults=50                 // ← とりあえず最大50件までください
+    ```
+    そして、このURLに対して`GET`リクエストを送信します。
+
+*   **役割:**
+    再生リスト専門家は、Googleのサーバーに対して、**公式なフォーマット**で「この案件番号のリストについて、基本情報を50件ください。これが許可証です」と、**礼儀正しく**問い合わせを行います。
+
+---
+
+#### **ステップ4：【情報提供】YouTube Data API → Pythonサーバー**
+
+*   **何が起きるか:**
+    リクエストを受け取ったGoogleのサーバーは、APIキーが有効で、再生リストIDが正しいことを確認します。問題がなければ、データベースから該当する再生リストの動画情報を検索し、その結果を**膨大なJSONデータ**としてPythonサーバーに返します。
+
+*   **役割:**
+    Googleのサーバーは、問い合わせ内容を審査し、問題がなければ**公式な情報**を提供します。
+
+---
+
+#### **ステップ5：【加工と整形】Pythonサーバーの内部処理**
+
+*   **何が起きるか:**
+    Googleから返ってきた膨大なJSONデータを受け取ったPythonサーバーは、アプリが使いやすいように、**必要な情報だけを抜き出して、綺麗なリストに加工**します。
+
+    ```python
+    video_list = []
+    for item in data.get('items', []): # 動画リストをループ処理
+        snippet = item.get('snippet', {})
+        video_id = snippet.get('resourceId', {}).get('videoId')
+        if video_id:
+            video_list.append(PlaylistItem(
+                title=snippet.get('title'),
+                videoUrl=f"https://www.youtube.com/watch?v={video_id}", # URLを組み立て
+                thumbnailUrl=snippet.get('thumbnails', {}).get('high', {}).get('url')
+            ))
+    ```
+
+*   **役割:**
+    再生リスト専門家は、受け取った専門的な資料（JSON）を、お客様（アプリ）が見やすいように、**タイトル、動画URL、サムネイルURL**がセットになった、**簡潔な報告書**にまとめ直します。

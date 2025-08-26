@@ -16,6 +16,7 @@ class MetadataExtractor {
         this.loadingSection = document.getElementById('loadingSection');
         this.resultsSection = document.getElementById('resultsSection');
         this.errorSection = document.getElementById('errorSection');
+        this.playlistSection = document.getElementById('playlistSection');
 
         // Result display elements
         this.platformBadge = document.getElementById('platformBadge');
@@ -29,6 +30,7 @@ class MetadataExtractor {
         this.thumbnailLink = document.getElementById('thumbnailLink');
         this.jsonResponse = document.getElementById('jsonResponse');
         this.errorMessage = document.getElementById('errorMessage');
+        this.playlistVideos = document.getElementById('playlistVideos');
 
         // Control elements
         this.clearResults = document.getElementById('clearResults');
@@ -104,6 +106,7 @@ class MetadataExtractor {
         this.loadingSection.style.display = 'block';
         this.resultsSection.style.display = 'none';
         this.errorSection.style.display = 'none';
+        this.playlistSection.style.display = 'none';
         this.extractBtn.disabled = true;
         this.extractBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>処理中...';
     }
@@ -130,6 +133,9 @@ class MetadataExtractor {
         // Update thumbnail
         this.updateThumbnail(metadata.thumbnailUrl);
 
+        // Update playlist if available
+        this.updatePlaylist(metadata);
+
         // Update JSON response
         this.jsonResponse.textContent = JSON.stringify(metadata, null, 2);
 
@@ -153,6 +159,11 @@ class MetadataExtractor {
                 icon: 'fab fa-instagram', 
                 text: 'Instagram',
                 class: 'bg-warning'
+            },
+            youtube_playlist: { 
+                icon: 'fab fa-youtube', 
+                text: 'YouTubeプレイリスト',
+                class: 'bg-danger'
             },
             other: { 
                 icon: 'fas fa-question', 
@@ -195,9 +206,61 @@ class MetadataExtractor {
         this.thumbnailUrl.style.display = 'none';
     }
 
+    updatePlaylist(metadata) {
+        if (metadata.platform === 'youtube_playlist' && metadata.playlist_videos) {
+            this.playlistSection.style.display = 'block';
+            
+            // Create playlist HTML
+            let playlistHtml = `
+                <div class="mb-3">
+                    <strong class="text-info">
+                        <i class="fas fa-video me-2"></i>
+                        ${metadata.video_count}個の動画が見つかりました
+                    </strong>
+                </div>
+                <div class="row g-3">
+            `;
+            
+            metadata.playlist_videos.forEach((video, index) => {
+                playlistHtml += `
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card bg-dark border-secondary h-100">
+                            <div class="card-body p-3">
+                                <div class="d-flex align-items-start">
+                                    <span class="badge bg-info me-2 mt-1">${index + 1}</span>
+                                    <div class="flex-grow-1">
+                                        <h6 class="card-title text-light mb-2" style="font-size: 0.85rem; line-height: 1.3;">
+                                            ${this.truncateText(video.title || '無題', 60)}
+                                        </h6>
+                                        <div class="d-flex gap-2">
+                                            <a href="${video.videoUrl}" target="_blank" class="btn btn-outline-info btn-sm">
+                                                <i class="fas fa-external-link-alt me-1"></i>
+                                                視聴
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            playlistHtml += '</div>';
+            this.playlistVideos.innerHTML = playlistHtml;
+        } else {
+            this.playlistSection.style.display = 'none';
+        }
+    }
+
     truncateUrl(url, maxLength = 50) {
         if (url.length <= maxLength) return url;
         return url.substring(0, maxLength - 3) + '...';
+    }
+
+    truncateText(text, maxLength = 100) {
+        if (text.length <= maxLength) return text;
+        return text.substring(0, maxLength - 3) + '...';
     }
 
     showError(message) {
@@ -214,6 +277,7 @@ class MetadataExtractor {
         this.resultsSection.style.display = 'none';
         this.errorSection.style.display = 'none';
         this.loadingSection.style.display = 'none';
+        this.playlistSection.style.display = 'none';
 
         // Reset displays
         this.platformBadge.className = 'badge bg-info fs-6';
