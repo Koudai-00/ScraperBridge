@@ -314,6 +314,27 @@ class MetadataExtractor:
             
             soup = BeautifulSoup(html_text, 'html.parser')
             
+            # Debug: Log HTML structure for analysis
+            logging.debug(f"Instagram HTML title tag: {soup.find('title')}")
+            logging.debug(f"Instagram meta tags count: {len(soup.find_all('meta'))}")
+            
+            # Log some meta tags for debugging
+            meta_tags = soup.find_all('meta')
+            for i, tag in enumerate(meta_tags[:10]):  # Log first 10 meta tags
+                if tag.get('property') or tag.get('name'):
+                    logging.debug(f"Meta tag {i}: {tag}")
+            
+            # Check for Instagram-specific patterns in HTML
+            scripts = soup.find_all('script')
+            logging.debug(f"Total script tags found: {len(scripts)}")
+            
+            # Look for window._sharedData or similar Instagram data patterns
+            for i, script in enumerate(scripts[:5]):  # Check first 5 scripts
+                if script.string and len(script.string) > 100:
+                    script_text = script.string[:200]  # First 200 chars
+                    if 'window._sharedData' in script_text or 'InstagramAPI' in script_text or '"entry_data"' in script_text:
+                        logging.debug(f"Found potential Instagram data script {i}: {script_text}")
+            
             # Extract metadata from meta tags and JSON-LD
             title = None
             thumbnail_url = None
@@ -321,6 +342,7 @@ class MetadataExtractor:
             
             # Method 1: Try to find JSON-LD structured data
             json_scripts = soup.find_all('script', type='application/ld+json')
+            logging.debug(f"Found {len(json_scripts)} JSON-LD scripts")
             for script in json_scripts:
                 try:
                     if script.string:
