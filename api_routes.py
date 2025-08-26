@@ -85,6 +85,63 @@ def get_metadata_v1():
     except Exception as e:
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
+@api_bp.route('/get-videos-from-playlist', methods=['POST'])
+def get_videos_from_playlist():
+    """
+    Get video URLs from YouTube playlist
+    
+    Request body:
+    {
+        "url": "https://www.youtube.com/playlist?list=PLrGjL4i5rXIvKOPyneAz_Paf0Rqv6ZsEK"
+    }
+    
+    Response:
+    {
+        "videos": [
+            {
+                "title": "Video Title",
+                "videoUrl": "https://www.youtube.com/watch?v=...",
+                "thumbnailUrl": "https://..."
+            }
+        ]
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data or 'url' not in data:
+            return jsonify({
+                "error": "Missing 'url' field in request body"
+            }), 400
+        
+        playlist_url = data['url']
+        
+        # Check if it's a YouTube playlist URL
+        if 'youtube.com/playlist' not in playlist_url and 'youtu.be/playlist' not in playlist_url:
+            return jsonify({
+                "error": "Invalid YouTube playlist URL"
+            }), 400
+        
+        logging.info(f"Processing YouTube playlist: {playlist_url}")
+        
+        # Extract playlist videos using the extractor
+        videos = extractor.extract_playlist_videos(playlist_url)
+        
+        return jsonify({
+            "videos": videos
+        }), 200
+        
+    except ValueError as e:
+        logging.error(f"ValueError in playlist extraction: {str(e)}")
+        return jsonify({
+            "error": str(e)
+        }), 400
+        
+    except Exception as e:
+        logging.error(f"Unexpected error in playlist extraction: {str(e)}")
+        return jsonify({
+            "error": f"Internal server error: {str(e)}"
+        }), 500
+
 @api_bp.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
