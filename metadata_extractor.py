@@ -281,159 +281,189 @@ class MetadataExtractor:
     
     def _scrape_instagram_metadata(self, url: str, post_id: str) -> dict:
         """Scrape Instagram metadata from web page"""
-        # Instagram requires special handling due to their anti-bot measures
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Cache-Control': 'max-age=0',
-        }
+        # Try different Instagram URL formats and approaches
+        approaches = [
+            # Approach 1: Try embed URL (often has more accessible metadata)
+            {
+                'url': f"https://www.instagram.com/p/{post_id}/embed/",
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': 'https://www.instagram.com/',
+                }
+            },
+            # Approach 2: Original URL with different headers
+            {
+                'url': url.replace('?hl=ja', ''),  # Remove language parameter
+                'headers': {
+                    'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                }
+            },
+            # Approach 3: Mobile user agent
+            {
+                'url': url,
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Cache-Control': 'max-age=0',
+                }
+            }
+        ]
         
-        try:
-            response = self.session.get(url, headers=headers, timeout=20)
-            response.raise_for_status()
-            
-            # Handle encoding issues by trying different encodings
-            content = response.content
-            html_text = ""
-            
-            # Try different encoding methods
-            encodings_to_try = ['utf-8', 'iso-8859-1', 'cp1252', 'latin1']
-            for encoding in encodings_to_try:
-                try:
-                    html_text = content.decode(encoding, errors='ignore')
-                    break
-                except (UnicodeDecodeError, UnicodeError):
-                    continue
-            
-            if not html_text:
-                html_text = content.decode('utf-8', errors='replace')
-            
-            soup = BeautifulSoup(html_text, 'html.parser')
-            
-            # Debug: Log HTML structure for analysis
-            logging.debug(f"Instagram HTML title tag: {soup.find('title')}")
-            logging.debug(f"Instagram meta tags count: {len(soup.find_all('meta'))}")
-            
-            # Log some meta tags for debugging
-            meta_tags = soup.find_all('meta')
-            for i, tag in enumerate(meta_tags[:10]):  # Log first 10 meta tags
-                if tag.get('property') or tag.get('name'):
-                    logging.debug(f"Meta tag {i}: {tag}")
-            
-            # Check for Instagram-specific patterns in HTML
-            scripts = soup.find_all('script')
-            logging.debug(f"Total script tags found: {len(scripts)}")
-            
-            # Look for window._sharedData or similar Instagram data patterns
-            for i, script in enumerate(scripts[:5]):  # Check first 5 scripts
-                if script.string and len(script.string) > 100:
-                    script_text = script.string[:200]  # First 200 chars
-                    if 'window._sharedData' in script_text or 'InstagramAPI' in script_text or '"entry_data"' in script_text:
-                        logging.debug(f"Found potential Instagram data script {i}: {script_text}")
-            
-            # Extract metadata from meta tags and JSON-LD
-            title = None
-            thumbnail_url = None
-            author_name = None
-            
-            # Method 1: Try to find JSON-LD structured data
-            json_scripts = soup.find_all('script', type='application/ld+json')
-            logging.debug(f"Found {len(json_scripts)} JSON-LD scripts")
-            for script in json_scripts:
-                try:
-                    if script.string:
-                        json_data = json.loads(script.string)
-                        if isinstance(json_data, dict):
-                            # Extract from structured data
-                            if 'name' in json_data:
-                                title = json_data.get('name')
-                            if 'image' in json_data:
-                                image_data = json_data.get('image')
-                                if isinstance(image_data, list) and image_data:
-                                    thumbnail_url = image_data[0]
-                                elif isinstance(image_data, str):
-                                    thumbnail_url = image_data
-                            if 'author' in json_data:
-                                author_data = json_data.get('author')
-                                if isinstance(author_data, dict) and 'name' in author_data:
-                                    author_name = author_data['name']
-                except (json.JSONDecodeError, TypeError, AttributeError):
-                    continue
-            
-            # Method 2: Extract from meta tags
-            if not title:
-                title_tag = soup.find('meta', property='og:title') or soup.find('meta', attrs={'name': 'title'})
-                if title_tag:
-                    title_content = title_tag.get('content')
-                    if title_content:
-                        title = title_content.strip()
-                        # Instagram titles often contain author info
-                        if ' • Instagram' in title:
-                            parts = title.split(' • Instagram')
-                            title = parts[0].strip()
-                        if ' on Instagram:' in title:
-                            author_name = title.split(' on Instagram:')[0].strip()
-                            if ': "' in title:
-                                title = title.split(': "')[1].rstrip('"').strip()
-            
-            # Method 3: Try description meta tag
-            if not title:
-                description_tag = soup.find('meta', attrs={'name': 'description'}) or soup.find('meta', property='og:description')
-                if description_tag:
-                    description = description_tag.get('content')
-                    if description and description.strip():
-                        title = description.strip()
-            
-            # Method 4: Extract thumbnail from various meta tags
-            if not thumbnail_url:
-                image_tags = [
-                    soup.find('meta', property='og:image'),
-                    soup.find('meta', attrs={'name': 'twitter:image'}),
-                    soup.find('meta', property='og:image:secure_url'),
-                    soup.find('meta', attrs={'name': 'thumbnail'})
-                ]
-                for tag in image_tags:
-                    if tag and tag.get('content'):
-                        thumbnail_url = tag.get('content').strip()
+        # Try each approach until one works
+        for i, approach in enumerate(approaches):
+            try:
+                logging.debug(f"Trying Instagram approach {i+1}: {approach['url']}")
+                response = self.session.get(approach['url'], headers=approach['headers'], timeout=20)
+                response.raise_for_status()
+                
+                # Handle encoding issues by trying different encodings
+                content = response.content
+                html_text = ""
+                
+                # Try different encoding methods
+                encodings_to_try = ['utf-8', 'iso-8859-1', 'cp1252', 'latin1']
+                for encoding in encodings_to_try:
+                    try:
+                        html_text = content.decode(encoding, errors='ignore')
                         break
-            
-            # Method 5: Extract author name from URL if not found elsewhere
-            if not author_name and url:
-                username_match = re.search(r'instagram\.com/([^/]+)/', url)
-                if username_match:
-                    author_name = username_match.group(1)
-            
-            # Log extracted data for debugging
-            logging.debug(f"Instagram extraction results: title='{title}', thumbnail='{thumbnail_url}', author='{author_name}'")
-            
-            return {
-                "platform": "instagram",
-                "unique_video_id": post_id,
-                "title": title,
-                "thumbnailUrl": thumbnail_url,
-                "authorName": author_name
-            }
-            
-        except Exception as e:
-            logging.error(f"Error scraping Instagram metadata: {e}")
-            # Return minimal data with just the author name from URL
-            author_name = None
-            if url:
-                username_match = re.search(r'instagram\.com/([^/]+)/', url)
-                if username_match:
-                    author_name = username_match.group(1)
-            
-            return {
-                "platform": "instagram",
-                "unique_video_id": post_id,
-                "title": None,
-                "thumbnailUrl": None,
-                "authorName": author_name
-            }
+                    except (UnicodeDecodeError, UnicodeError):
+                        continue
+                
+                if not html_text:
+                    html_text = content.decode('utf-8', errors='replace')
+                
+                soup = BeautifulSoup(html_text, 'html.parser')
+                
+                # Debug: Log HTML structure for analysis
+                title_tag = soup.find('title')
+                meta_count = len(soup.find_all('meta'))
+                script_count = len(soup.find_all('script'))
+                
+                logging.debug(f"Approach {i+1} - Title: {title_tag}, Meta: {meta_count}, Scripts: {script_count}")
+                
+                # Skip if no useful content found
+                if meta_count == 0 and script_count == 0 and not title_tag:
+                    logging.debug(f"Approach {i+1} returned empty content, trying next...")
+                    continue
+                
+                # Log some meta tags for debugging
+                meta_tags = soup.find_all('meta')
+                for j, tag in enumerate(meta_tags[:5]):  # Log first 5 meta tags
+                    if tag.get('property') or tag.get('name'):
+                        logging.debug(f"Approach {i+1} Meta tag {j}: {tag}")
+                
+                # Extract metadata from meta tags and JSON-LD
+                title = None
+                thumbnail_url = None
+                author_name = None
+                
+                # Method 1: Try to find JSON-LD structured data
+                json_scripts = soup.find_all('script', type='application/ld+json')
+                for script in json_scripts:
+                    try:
+                        if script.string:
+                            json_data = json.loads(script.string)
+                            if isinstance(json_data, dict):
+                                # Extract from structured data
+                                if 'name' in json_data:
+                                    title = json_data.get('name')
+                                if 'image' in json_data:
+                                    image_data = json_data.get('image')
+                                    if isinstance(image_data, list) and image_data:
+                                        thumbnail_url = image_data[0]
+                                    elif isinstance(image_data, str):
+                                        thumbnail_url = image_data
+                                if 'author' in json_data:
+                                    author_data = json_data.get('author')
+                                    if isinstance(author_data, dict) and 'name' in author_data:
+                                        author_name = author_data['name']
+                    except (json.JSONDecodeError, TypeError, AttributeError):
+                        continue
+                
+                # Method 2: Extract from meta tags
+                if not title:
+                    title_tag = soup.find('meta', property='og:title') or soup.find('meta', attrs={'name': 'title'})
+                    if title_tag:
+                        title_content = title_tag.get('content')
+                        if title_content:
+                            title = title_content.strip()
+                            # Instagram titles often contain author info
+                            if ' • Instagram' in title:
+                                parts = title.split(' • Instagram')
+                                title = parts[0].strip()
+                            if ' on Instagram:' in title:
+                                author_name = title.split(' on Instagram:')[0].strip()
+                                if ': "' in title:
+                                    title = title.split(': "')[1].rstrip('"').strip()
+                
+                # Method 3: Try description meta tag
+                if not title:
+                    description_tag = soup.find('meta', attrs={'name': 'description'}) or soup.find('meta', property='og:description')
+                    if description_tag:
+                        description = description_tag.get('content')
+                        if description and description.strip():
+                            title = description.strip()
+                
+                # Method 4: Extract thumbnail from various meta tags
+                if not thumbnail_url:
+                    image_tags = [
+                        soup.find('meta', property='og:image'),
+                        soup.find('meta', attrs={'name': 'twitter:image'}),
+                        soup.find('meta', property='og:image:secure_url'),
+                        soup.find('meta', attrs={'name': 'thumbnail'})
+                    ]
+                    for tag in image_tags:
+                        if tag and tag.get('content'):
+                            thumbnail_url = tag.get('content').strip()
+                            break
+                
+                # Method 5: Extract author name from URL if not found elsewhere
+                if not author_name:
+                    username_match = re.search(r'instagram\.com/([^/]+)/', url)
+                    if username_match:
+                        author_name = username_match.group(1)
+                
+                # Log extracted data for debugging
+                logging.debug(f"Approach {i+1} extraction results: title='{title}', thumbnail='{thumbnail_url}', author='{author_name}'")
+                
+                # If we found some metadata, return it
+                if title or thumbnail_url or (author_name and author_name != username_match.group(1) if username_match else True):
+                    logging.debug(f"Successfully extracted metadata using approach {i+1}")
+                    return {
+                        "platform": "instagram",
+                        "unique_video_id": post_id,
+                        "title": title,
+                        "thumbnailUrl": thumbnail_url,
+                        "authorName": author_name
+                    }
+                
+            except Exception as e:
+                logging.debug(f"Approach {i+1} failed: {e}")
+                continue
+        
+        # If all approaches failed, return minimal data
+        logging.warning("All Instagram extraction approaches failed")
+        author_name = None
+        if url:
+            username_match = re.search(r'instagram\.com/([^/]+)/', url)
+            if username_match:
+                author_name = username_match.group(1)
+        
+        return {
+            "platform": "instagram",
+            "unique_video_id": post_id,
+            "title": None,
+            "thumbnailUrl": None,
+            "authorName": author_name
+        }
     
     def _is_youtube_playlist(self, url: str) -> bool:
         """Check if the URL is a YouTube playlist"""
