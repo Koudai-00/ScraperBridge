@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SNS Metadata Extractor - Test Interface</title>
+    
+    <!-- Bootstrap CSS with Replit theme -->
+    <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome for icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <!-- Header -->
+        <div class="row mb-5">
+            <div class="col-12 text-center">
+                <h1 class="display-4 mb-3">
+                    <i class="fas fa-link text-info me-3"></i>
+                    SNS Metadata Extractor
+                </h1>
+                <p class="lead text-muted">
+                    Extract metadata from YouTube, TikTok, and Instagram URLs
+                </p>
+            </div>
+        </div>
+
+        <!-- URL Input Section -->
+        <div class="row mb-5">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title mb-0">
+                            <i class="fas fa-search me-2"></i>
+                            Test URL Input
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <form id="urlForm">
+                            <div class="mb-3">
+                                <label for="urlInput" class="form-label">Enter SNS URL:</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">
+                                        <i class="fas fa-globe"></i>
+                                    </span>
+                                    <input 
+                                        type="url" 
+                                        class="form-control" 
+                                        id="urlInput" 
+                                        placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                                        required
+                                    >
+                                    <button 
+                                        type="submit" 
+                                        class="btn btn-info" 
+                                        id="extractBtn"
+                                    >
+                                        <i class="fas fa-magic me-2"></i>
+                                        Extract Metadata
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+
+                        <!-- Example URLs -->
+                        <div class="mt-3">
+                            <small class="text-muted d-block mb-2">
+                                <i class="fas fa-lightbulb me-1"></i>
+                                Try these example URLs:
+                            </small>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button class="btn btn-outline-secondary btn-sm example-url" 
+                                        data-url="https://www.youtube.com/watch?v=dQw4w9WgXcQ">
+                                    <i class="fab fa-youtube me-1"></i>
+                                    YouTube
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm example-url" 
+                                        data-url="https://www.tiktok.com/@username/video/1234567890">
+                                    <i class="fab fa-tiktok me-1"></i>
+                                    TikTok
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm example-url" 
+                                        data-url="https://www.instagram.com/p/ABC123/">
+                                    <i class="fab fa-instagram me-1"></i>
+                                    Instagram
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div class="row mb-4" id="loadingSection" style="display: none;">
+            <div class="col-12">
+                <div class="card border-info">
+                    <div class="card-body text-center">
+                        <div class="spinner-border text-info me-3" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <span class="text-info">Extracting metadata...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="row mb-5" id="resultsSection" style="display: none;">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h3 class="card-title mb-0">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Extracted Metadata
+                        </h3>
+                        <button class="btn btn-outline-secondary btn-sm" id="clearResults">
+                            <i class="fas fa-times me-1"></i>
+                            Clear
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <!-- Platform Badge -->
+                            <div class="col-12 mb-3">
+                                <span class="badge bg-info fs-6" id="platformBadge">
+                                    <i class="fas fa-tag me-1"></i>
+                                    Platform
+                                </span>
+                            </div>
+
+                            <!-- Metadata Display -->
+                            <div class="col-lg-6">
+                                <div class="metadata-item mb-3">
+                                    <label class="form-label text-muted">
+                                        <i class="fas fa-heading me-1"></i>
+                                        Title:
+                                    </label>
+                                    <div class="form-control bg-secondary" id="titleDisplay">-</div>
+                                </div>
+
+                                <div class="metadata-item mb-3">
+                                    <label class="form-label text-muted">
+                                        <i class="fas fa-user me-1"></i>
+                                        Author:
+                                    </label>
+                                    <div class="form-control bg-secondary" id="authorDisplay">-</div>
+                                </div>
+
+                                <div class="metadata-item mb-3">
+                                    <label class="form-label text-muted">
+                                        <i class="fas fa-fingerprint me-1"></i>
+                                        Unique Video ID:
+                                    </label>
+                                    <div class="form-control bg-secondary font-monospace" id="videoIdDisplay">-</div>
+                                </div>
+                            </div>
+
+                            <!-- Thumbnail Display -->
+                            <div class="col-lg-6">
+                                <div class="metadata-item">
+                                    <label class="form-label text-muted">
+                                        <i class="fas fa-image me-1"></i>
+                                        Thumbnail:
+                                    </label>
+                                    <div class="thumbnail-container bg-secondary rounded p-3 text-center" id="thumbnailContainer">
+                                        <div class="text-muted" id="thumbnailPlaceholder">
+                                            <i class="fas fa-image fa-2x mb-2"></i>
+                                            <div>No thumbnail available</div>
+                                        </div>
+                                        <img id="thumbnailImage" class="img-fluid rounded" style="display: none; max-height: 200px;" alt="Video thumbnail">
+                                        <div class="mt-2" id="thumbnailUrl" style="display: none;">
+                                            <small class="text-muted">URL: </small>
+                                            <a href="#" target="_blank" class="text-info text-break" id="thumbnailLink"></a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- JSON Response -->
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <div class="metadata-item">
+                                    <label class="form-label text-muted">
+                                        <i class="fas fa-code me-1"></i>
+                                        Raw JSON Response:
+                                    </label>
+                                    <pre class="bg-dark text-light p-3 rounded border" id="jsonResponse">No data</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Section -->
+        <div class="row mb-5" id="errorSection" style="display: none;">
+            <div class="col-12">
+                <div class="alert alert-danger" role="alert">
+                    <h4 class="alert-heading">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        Error
+                    </h4>
+                    <p class="mb-0" id="errorMessage">An error occurred while processing the URL.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Information -->
+        <div class="row mt-5">
+            <div class="col-12">
+                <div class="card border-secondary">
+                    <div class="card-header">
+                        <h4 class="card-title mb-0">
+                            <i class="fas fa-info me-2"></i>
+                            API Information
+                        </h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-lg-6">
+                                <h5>Endpoints:</h5>
+                                <ul class="list-unstyled">
+                                    <li><code class="text-info">POST /api/v2/get-metadata</code> - Latest API (recommended)</li>
+                                    <li><code class="text-info">POST /api/get-metadata</code> - Legacy API</li>
+                                    <li><code class="text-info">GET /api/health</code> - Health check</li>
+                                </ul>
+                            </div>
+                            <div class="col-lg-6">
+                                <h5>Supported Platforms:</h5>
+                                <ul class="list-unstyled">
+                                    <li><i class="fab fa-youtube text-danger me-2"></i>YouTube</li>
+                                    <li><i class="fab fa-tiktok text-light me-2"></i>TikTok</li>
+                                    <li><i class="fab fa-instagram text-warning me-2"></i>Instagram</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Custom JS -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

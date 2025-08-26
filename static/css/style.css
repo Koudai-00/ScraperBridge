@@ -1,0 +1,116 @@
+/* Custom styles for SNS Metadata Extractor */
+
+/* General improvements */
+.metadata-item {
+    margin-bottom: 1rem;
+}
+
+.thumbnail-container {
+    min-height: 150px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+/* JSON display styling */
+#jsonResponse {
+    font-size: 0.875rem;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Platform badge styling */
+.badge.fs-6 {
+    font-size: 1rem !important;
+}
+
+/* Example URL buttons */
+.example-url {
+    font-size: 0.8rem;
+}
+
+/* Loading animation improvements */
+.spinner-border {
+    width: 2rem;
+    height: 2rem;
+}
+
+/* Card hover effects */
+.card {
+    transition: box-shadow 0.15s ease-in-out;
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+    .display-4 {
+        font-size: 2rem;
+    }
+    
+    .input-group {
+        flex-direction: column;
+    }
+    
+    .input-group .btn {
+        border-radius: 0.375rem;
+        margin-top: 0.5rem;
+    }
+    
+    .d-flex.gap-2 {
+        flex-direction: column;
+        gap: 0.5rem !important;
+    }
+    
+    .example-url {
+        width: 100%;
+    }
+}
+
+/* Thumbnail image styling */
+#thumbnailImage {
+    border: 2px solid var(--bs-border-color);
+    border-radius: 0.375rem;
+}
+
+/* Metadata display styling */
+.form-control.bg-secondary {
+    color: var(--bs-body-color);
+    border: 1px solid var(--bs-border-color);
+}
+
+/* Code block styling */
+code {
+    font-size: 0.875rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    background-color: var(--bs-gray-800);
+}
+
+/* Link styling in thumbnail URL */
+.text-break {
+    word-break: break-all;
+}
+
+/* Alert styling improvements */
+.alert {
+    border: 1px solid;
+}
+
+.alert-danger {
+    border-color: var(--bs-danger);
+}
+
+/* Card border improvements */
+.card.border-info {
+    border-color: var(--bs-info) !important;
+}
+
+.card.border-secondary {
+    border-color: var(--bs-secondary) !important;
+}
