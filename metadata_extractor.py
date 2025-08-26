@@ -344,56 +344,62 @@ class MetadataExtractor:
                     logging.debug(f"TikTok Approach {i+1} returned minimal content, trying next...")
                     continue
                 
-                # Log some meta tags for debugging
+                # Log key meta tags for debugging
                 meta_tags = soup.find_all('meta')
-                for j, tag in enumerate(meta_tags):  # Log all meta tags to find missing titles
+                for j, tag in enumerate(meta_tags[:5]):  # Log first 5 meta tags for basic debugging
                     if tag.get('property') or tag.get('name'):
-                        content = tag.get('content', '')
-                        if j < 10:  # Show first 10 tags
-                            logging.debug(f"TikTok Approach {i+1} Meta tag {j}: {tag}")
-                        # Also log any tags that might contain title information
-                        if ('title' in str(tag).lower() or 'description' in str(tag).lower() or 
-                            'og:' in str(tag).lower() or 'twitter:' in str(tag).lower()):
-                            logging.debug(f"TikTok Approach {i+1} Title-related tag: {tag}")
+                        logging.debug(f"TikTok Approach {i+1} Meta tag {j}: {tag}")
                 
                 # Extract metadata from meta tags
                 title = None
                 thumbnail_url = None
                 author_name = None
                 
-                # Method 1: Extract title from various sources
-                title_sources = [
-                    # First try TikTok-specific meta tags
-                    soup.find('meta', property='og:title'),
-                    soup.find('meta', property='og:description'),
-                    soup.find('meta', attrs={'name': 'description'}),
-                    soup.find('meta', attrs={'name': 'twitter:title'}),
-                    soup.find('meta', attrs={'name': 'twitter:description'}),
-                    # Also try the title tag as fallback
-                    soup.find('title')
-                ]
+                # Method 1: Extract title from various sources with smart prioritization
+                og_title = soup.find('meta', property='og:title')
+                og_description = soup.find('meta', property='og:description')
+                twitter_description = soup.find('meta', property='twitter:description')
                 
-                for source in title_sources:
-                    if source:
-                        content = None
-                        if hasattr(source, 'get') and source.get('content'):
-                            content = source.get('content').strip()
-                        elif hasattr(source, 'get_text') and source.get_text():
-                            content = source.get_text().strip()
-                        
-                        if content:
-                            # Clean up TikTok title format
-                            if content.startswith('TikTok ·'):
-                                # Skip generic TikTok titles like "TikTok · 名無し"
-                                if '名無し' not in content and 'Untitled' not in content:
-                                    title = content.replace('TikTok ·', '').strip()
-                                    break
-                            elif content != 'TikTok' and len(content) > 6:
-                                # Clean TikTok description format
-                                cleaned_title = self._clean_tiktok_title(content)
-                                if cleaned_title:
-                                    title = cleaned_title
-                                    break
+                # Extract content from meta tags
+                og_title_content = og_title.get('content').strip() if og_title and og_title.get('content') else None
+                og_desc_content = og_description.get('content').strip() if og_description and og_description.get('content') else None
+                twitter_desc_content = twitter_description.get('content').strip() if twitter_description and twitter_description.get('content') else None
+                
+                # Strategy: Prefer description over title if title is just account name
+                title_candidates = []
+                
+                # First, try to extract from og:description (most reliable for actual video title)
+                if og_desc_content:
+                    cleaned_from_desc = self._clean_tiktok_title(og_desc_content)
+                    if cleaned_from_desc:
+                        title_candidates.append(('og:description', cleaned_from_desc))
+                        logging.debug(f"TikTok Approach {i+1} - Found title in og:description: '{cleaned_from_desc}'")
+                
+                # Then try twitter:description
+                if twitter_desc_content and twitter_desc_content != og_desc_content:
+                    cleaned_from_twitter = self._clean_tiktok_title(twitter_desc_content)
+                    if cleaned_from_twitter:
+                        title_candidates.append(('twitter:description', cleaned_from_twitter))
+                        logging.debug(f"TikTok Approach {i+1} - Found title in twitter:description: '{cleaned_from_twitter}'")
+                
+                # Finally, try og:title if it's not just an account name
+                if og_title_content:
+                    if og_title_content.startswith('TikTok ·'):
+                        account_part = og_title_content.replace('TikTok ·', '').strip()
+                        # Only use og:title if it doesn't look like just an account name and we don't have better candidates
+                        if (not title_candidates and '名無し' not in account_part and 
+                            'Untitled' not in account_part and len(account_part) > 3):
+                            title_candidates.append(('og:title', account_part))
+                            logging.debug(f"TikTok Approach {i+1} - Using og:title as fallback: '{account_part}'")
+                    elif len(og_title_content) > 6 and og_title_content != 'TikTok':
+                        cleaned_from_title = self._clean_tiktok_title(og_title_content)
+                        if cleaned_from_title and not title_candidates:
+                            title_candidates.append(('og:title', cleaned_from_title))
+                
+                # Select the best title candidate
+                if title_candidates:
+                    selected_source, title = title_candidates[0]  # Prefer description-based titles
+                    logging.debug(f"TikTok Approach {i+1} - Selected title from {selected_source}: '{title}'")
                 
                 # Method 2: Extract thumbnail from various sources
                 thumbnail_sources = [

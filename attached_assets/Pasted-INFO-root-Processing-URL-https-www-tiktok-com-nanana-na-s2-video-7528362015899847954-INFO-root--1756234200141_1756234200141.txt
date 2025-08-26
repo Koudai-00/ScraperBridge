@@ -1,0 +1,34 @@
+INFO:root:Processing URL: https://www.tiktok.com/@nanana_na_s2/video/7528362015899847954
+INFO:root:Extracting TikTok metadata from: https://www.tiktok.com/@nanana_na_s2/video/7528362015899847954
+DEBUG:root:Trying TikTok approach 1: https://www.tiktok.com/@nanana_na_s2/video/7528362015899847954
+DEBUG:urllib3.connectionpool:Starting new HTTPS connection (1): www.tiktok.com:443
+DEBUG:urllib3.connectionpool:https://www.tiktok.com:443 "GET /@nanana_na_s2/video/7528362015899847954 HTTP/1.1" 200 None
+DEBUG:root:TikTok Approach 1 - Title: None, Meta: 0, Scripts: 0
+DEBUG:root:TikTok Approach 1 returned minimal content, trying next...
+DEBUG:root:Trying TikTok approach 2: https://www.tiktok.com/@nanana_na_s2/video/7528362015899847954
+DEBUG:urllib3.connectionpool:https://www.tiktok.com:443 "GET /@nanana_na_s2/video/7528362015899847954 HTTP/1.1" 200 1145
+DEBUG:root:TikTok Approach 2 - Title: <title>TikTok · 名無し</title>, Meta: 23, Scripts: 0
+DEBUG:root:TikTok Approach 2 Meta tag 0: <meta content="en_US" name="og:locale"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="en_US" name="og:locale"/>
+DEBUG:root:TikTok Approach 2 Meta tag 1: <meta content="true" name="lark:url:enable"/>
+DEBUG:root:TikTok Approach 2 Meta tag 2: <meta content="TikTok" name="lark:url:video_brand_name"/>
+DEBUG:root:TikTok Approach 2 Meta tag 3: <meta content="https://lf16-tiktok-common.ibytedtos.com/obj/tiktok-web-common-sg/mtact/static/images/tiktok-logo/logo.png" name="lark:url:video_icon_url"/>
+DEBUG:root:TikTok Approach 2 Meta tag 4: <meta content="TikTok · 名無し" name="lark:url:video_title"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="TikTok · 名無し" name="lark:url:video_title"/>
+DEBUG:root:TikTok Approach 2 Meta tag 5: <meta content="https://p16-common-sign-sg.tiktokcdn-us.com/tos-alisg-p-0037/oEfQ1sjFISDes6iEhHFzII4WDaHkIACshfFohA~tplv-photomode-video-share-card:1200:630:20.jpeg?dr=9616&amp;refresh_token=a9a80851&amp;x-expires=1787767200&amp;x-signature=d5QBR98lwh4TdkNjCBS3vGyzqrA%3D&amp;t=4d5b0474&amp;ps=13740610&amp;shp=55bbe6a9&amp;shcp=9dfa7f7f&amp;idc=useast8&amp;ftpl=1" name="lark:url:video_cover_image_url"/>
+DEBUG:root:TikTok Approach 2 Meta tag 6: <meta content="https://www.tiktok.com/embed/v3/7528362015899847954?autoplay=1" name="lark:url:video_iframe_url"/>
+DEBUG:root:TikTok Approach 2 Meta tag 7: <meta content="597615686992125" property="fb:app_id"/>
+DEBUG:root:TikTok Approach 2 Meta tag 8: <meta content="835599320" property="al:ios:app_store_id"/>
+DEBUG:root:TikTok Approach 2 Meta tag 9: <meta content="musical.ly" property="al:ios:app_name"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="website" property="og:type"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="TikTok" property="og:site_name"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="https://www.tiktok.com/@nanana_na_s2/video/7528362015899847954" property="og:url"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="https://p16-common-sign-sg.tiktokcdn-us.com/tos-alisg-p-0037/oEfQ1sjFISDes6iEhHFzII4WDaHkIACshfFohA~tplv-photomode-video-share-card:1200:630:20.jpeg?dr=9616&amp;refresh_token=a9a80851&amp;x-expires=1787767200&amp;x-signature=d5QBR98lwh4TdkNjCBS3vGyzqrA%3D&amp;t=4d5b0474&amp;ps=13740610&amp;shp=55bbe6a9&amp;shcp=9dfa7f7f&amp;idc=useast8&amp;ftpl=1" property="og:image"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="https://p16-common-sign-sg.tiktokcdn-us.com/tos-alisg-p-0037/oEfQ1sjFISDes6iEhHFzII4WDaHkIACshfFohA~tplv-photomode-video-share-card:1200:630:20.jpeg?dr=9616&amp;refresh_token=a9a80851&amp;x-expires=1787767200&amp;x-signature=d5QBR98lwh4TdkNjCBS3vGyzqrA%3D&amp;t=4d5b0474&amp;ps=13740610&amp;shp=55bbe6a9&amp;shcp=9dfa7f7f&amp;idc=useast8&amp;ftpl=1" property="twitter:image"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="TikTok · 名無し" property="og:title"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="14.5K likes, 165 comments. “とびっきりの水着で来たのにw”" property="og:description"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="TikTok · 名無し" property="twitter:title"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="14.5K likes, 165 comments. “とびっきりの水着で来たのにw”" property="twitter:description"/>
+DEBUG:root:TikTok Approach 2 extraction results: title='“とびっきりの水着で来たのにw”', thumbnail='https://p16-common-sign-sg.tiktokcdn-us.com/tos-alisg-p-0037/oEfQ1sjFISDes6iEhHFzII4WDaHkIACshfFohA~tplv-photomode-video-share-card:1200:630:20.jpeg?dr=9616&refresh_token=a9a80851&x-expires=1787767200&x-signature=d5QBR98lwh4TdkNjCBS3vGyzqrA%3D&t=4d5b0474&ps=13740610&shp=55bbe6a9&shcp=9dfa7f7f&idc=useast8&ftpl=1', author='@nanana_na_s2'
+DEBUG:root:Successfully extracted TikTok metadata using approach 2
+INFO:root:Extracted metadata: {'platform': 'tiktok', 'unique_video_id': '7528362015899847954', 'title': '“とびっきりの水着で来たのにw”', 'thumbnailUrl': 'https://p16-common-sign-sg.tiktokcdn-us.com/tos-alisg-p-0037/oEfQ1sjFISDes6iEhHFzII4WDaHkIACshfFohA~tplv-photomode-video-share-card:1200:630:20.jpeg?dr=9616&refresh_token=a9a80851&x-expires=1787767200&x-signature=d5QBR98lwh4TdkNjCBS3vGyzqrA%3D&t=4d5b0474&ps=13740610&shp=55bbe6a9&shcp=9dfa7f7f&idc=useast8&ftpl=1', 'authorName': '@nanana_na_s2'}

@@ -1,0 +1,33 @@
+INFO:root:Processing URL: https://www.tiktok.com/@ginta_official27/video/7529453361708518674
+INFO:root:Extracting TikTok metadata from: https://www.tiktok.com/@ginta_official27/video/7529453361708518674
+DEBUG:root:Trying TikTok approach 1: https://www.tiktok.com/@ginta_official27/video/7529453361708518674
+DEBUG:urllib3.connectionpool:https://www.tiktok.com:443 "GET /@ginta_official27/video/7529453361708518674 HTTP/1.1" 200 30225
+DEBUG:root:TikTok Approach 1 - Title: None, Meta: 0, Scripts: 0
+DEBUG:root:TikTok Approach 1 returned minimal content, trying next...
+DEBUG:root:Trying TikTok approach 2: https://www.tiktok.com/@ginta_official27/video/7529453361708518674
+DEBUG:urllib3.connectionpool:https://www.tiktok.com:443 "GET /@ginta_official27/video/7529453361708518674 HTTP/1.1" 200 None
+DEBUG:root:TikTok Approach 2 - Title: <title>TikTok · GINTA OFFICIAL</title>, Meta: 23, Scripts: 0
+DEBUG:root:TikTok Approach 2 Meta tag 0: <meta content="en_US" name="og:locale"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="en_US" name="og:locale"/>
+DEBUG:root:TikTok Approach 2 Meta tag 1: <meta content="true" name="lark:url:enable"/>
+DEBUG:root:TikTok Approach 2 Meta tag 2: <meta content="TikTok" name="lark:url:video_brand_name"/>
+DEBUG:root:TikTok Approach 2 Meta tag 3: <meta content="https://lf16-tiktok-common.ibytedtos.com/obj/tiktok-web-common-sg/mtact/static/images/tiktok-logo/logo.png" name="lark:url:video_icon_url"/>
+DEBUG:root:TikTok Approach 2 Meta tag 4: <meta content="TikTok · GINTA OFFICIAL" name="lark:url:video_title"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="TikTok · GINTA OFFICIAL" name="lark:url:video_title"/>
+DEBUG:root:TikTok Approach 2 Meta tag 5: <meta content="https://p16-common-sign-sg.tiktokcdn-us.com/tos-alisg-p-0037/ogehsMG3RcG9m3lImeLuBgufGA73gAF9fOIQ9A~tplv-photomode-video-share-card:1200:630:20.jpeg?dr=9616&amp;refresh_token=d1ae5c62&amp;x-expires=1787767200&amp;x-signature=MXsBLMnO8v6JHJsYOb6TAoasGBQ%3D&amp;t=4d5b0474&amp;ps=13740610&amp;shp=55bbe6a9&amp;shcp=9dfa7f7f&amp;idc=useast8&amp;ftpl=1" name="lark:url:video_cover_image_url"/>
+DEBUG:root:TikTok Approach 2 Meta tag 6: <meta content="https://www.tiktok.com/embed/v3/7529453361708518674?autoplay=1" name="lark:url:video_iframe_url"/>
+DEBUG:root:TikTok Approach 2 Meta tag 7: <meta content="597615686992125" property="fb:app_id"/>
+DEBUG:root:TikTok Approach 2 Meta tag 8: <meta content="835599320" property="al:ios:app_store_id"/>
+DEBUG:root:TikTok Approach 2 Meta tag 9: <meta content="musical.ly" property="al:ios:app_name"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="website" property="og:type"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="TikTok" property="og:site_name"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="https://www.tiktok.com/@ginta_official27/video/7529453361708518674" property="og:url"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="https://p16-common-sign-sg.tiktokcdn-us.com/tos-alisg-p-0037/ogehsMG3RcG9m3lImeLuBgufGA73gAF9fOIQ9A~tplv-photomode-video-share-card:1200:630:20.jpeg?dr=9616&amp;refresh_token=d1ae5c62&amp;x-expires=1787767200&amp;x-signature=MXsBLMnO8v6JHJsYOb6TAoasGBQ%3D&amp;t=4d5b0474&amp;ps=13740610&amp;shp=55bbe6a9&amp;shcp=9dfa7f7f&amp;idc=useast8&amp;ftpl=1" property="og:image"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="https://p16-common-sign-sg.tiktokcdn-us.com/tos-alisg-p-0037/ogehsMG3RcG9m3lImeLuBgufGA73gAF9fOIQ9A~tplv-photomode-video-share-card:1200:630:20.jpeg?dr=9616&amp;refresh_token=d1ae5c62&amp;x-expires=1787767200&amp;x-signature=MXsBLMnO8v6JHJsYOb6TAoasGBQ%3D&amp;t=4d5b0474&amp;ps=13740610&amp;shp=55bbe6a9&amp;shcp=9dfa7f7f&amp;idc=useast8&amp;ftpl=1" property="twitter:image"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="TikTok · GINTA OFFICIAL" property="og:title"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="5808 likes, 35 comments. “MVもチェックしてね！そしていっぱい踊ってね”" property="og:description"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="TikTok · GINTA OFFICIAL" property="twitter:title"/>
+DEBUG:root:TikTok Approach 2 Title-related tag: <meta content="5808 likes, 35 comments. “MVもチェックしてね！そしていっぱい踊ってね”" property="twitter:description"/>
+DEBUG:root:TikTok Approach 2 extraction results: title='GINTA OFFICIAL', thumbnail='https://p16-common-sign-sg.tiktokcdn-us.com/tos-alisg-p-0037/ogehsMG3RcG9m3lImeLuBgufGA73gAF9fOIQ9A~tplv-photomode-video-share-card:1200:630:20.jpeg?dr=9616&refresh_token=d1ae5c62&x-expires=1787767200&x-signature=MXsBLMnO8v6JHJsYOb6TAoasGBQ%3D&t=4d5b0474&ps=13740610&shp=55bbe6a9&shcp=9dfa7f7f&idc=useast8&ftpl=1', author='@ginta_official27'
+DEBUG:root:Successfully extracted TikTok metadata using approach 2
+INFO:root:Extracted metadata: {'platform': 'tiktok', 'unique_video_id': '7529453361708518674', 'title': 'GINTA OFFICIAL', 'thumbnailUrl': 'https://p16-common-sign-sg.tiktokcdn-us.com/tos-alisg-p-0037/ogehsMG3RcG9m3lImeLuBgufGA73gAF9fOIQ9A~tplv-photomode-video-share-card:1200:630:20.jpeg?dr=9616&refresh_token=d1ae5c62&x-expires=1787767200&x-signature=MXsBLMnO8v6JHJsYOb6TAoasGBQ%3D&t=4d5b0474&ps=13740610&shp=55bbe6a9&shcp=9dfa7f7f&idc=useast8&ftpl=1', 'authorName': '@ginta_official27'}
