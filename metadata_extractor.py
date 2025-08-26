@@ -283,27 +283,38 @@ class MetadataExtractor:
         """Scrape Instagram metadata from web page"""
         # Instagram requires special handling due to their anti-bot measures
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
         }
         
-        response = self.session.get(url, headers=headers, timeout=10)
+        response = self.session.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Debug: Log page title to check if we're getting the right content
+        page_title = soup.find('title')
+        if page_title:
+            logging.debug(f"Instagram page title: {page_title.get_text()}")
         
         # Extract metadata from meta tags
         title = None
         thumbnail_url = None
         author_name = None
         
-        # Extract title/caption
+        # Try multiple methods to extract title/caption
         title_tag = soup.find('meta', property='og:title')
-        if title_tag and hasattr(title_tag, 'get'):
+        if title_tag:
             title_content = title_tag.get('content')
             if title_content:
                 title = title_content
@@ -312,10 +323,35 @@ class MetadataExtractor:
                     author_name = title.split(' on Instagram:')[0]
                     title = title.split(': "')[1].rstrip('"') if ': "' in title else title
         
-        # Extract thumbnail
+        # If og:title not found, try other meta tags
+        if not title:
+            description_tag = soup.find('meta', attrs={'name': 'description'})
+            if description_tag:
+                description = description_tag.get('content')
+                if description:
+                    title = description
+        
+        # Try to extract thumbnail from og:image
         thumbnail_tag = soup.find('meta', property='og:image')
-        if thumbnail_tag and hasattr(thumbnail_tag, 'get'):
+        if thumbnail_tag:
             thumbnail_url = thumbnail_tag.get('content')
+        
+        # If og:image not found, try other image meta tags
+        if not thumbnail_url:
+            image_tag = soup.find('meta', attrs={'name': 'twitter:image'})
+            if image_tag:
+                thumbnail_url = image_tag.get('content')
+        
+        # Try to extract author name from URL if not found in title
+        if not author_name and url:
+            # Extract username from URL pattern like /username/p/postid/
+            import re
+            username_match = re.search(r'instagram\.com/([^/]+)/', url)
+            if username_match:
+                author_name = username_match.group(1)
+        
+        # Log extracted data for debugging
+        logging.debug(f"Instagram extraction results: title='{title}', thumbnail='{thumbnail_url}', author='{author_name}'")
         
         return {
             "platform": "instagram",
