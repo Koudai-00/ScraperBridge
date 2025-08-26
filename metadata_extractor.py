@@ -223,9 +223,29 @@ class MetadataExtractor:
     
     def _scrape_tiktok_metadata(self, url: str, video_id: str) -> dict:
         """Scrape TikTok metadata from web page"""
-        # TikTok requires special handling due to their anti-bot measures
+        # TikTok requires special handling - prioritize oEmbed API for accurate titles
+        clean_url = url.split('?')[0]  # Remove query parameters for oEmbed
+        
         approaches = [
-            # Approach 1: Mobile user agent
+            # Approach 1: TikTok oEmbed API (最優先 - 正確なタイトル取得)
+            {
+                'url': f"https://www.tiktok.com/oembed?url={clean_url}",
+                'headers': {
+                    'User-Agent': 'Expo/1017721 CFNetwork/3826.600.41 Darwin/24.6.0',  # 成功実績のあるUser-Agent
+                    'Accept': 'application/json,text/plain,*/*',
+                    'Accept-Language': 'en-US,en;q=0.9,ja;q=0.8',
+                }
+            },
+            # Approach 2: Alternative oEmbed with different User-Agent
+            {
+                'url': f"https://www.tiktok.com/oembed?url={clean_url}",
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/json,text/plain,*/*',
+                    'Referer': 'https://www.tiktok.com/',
+                }
+            },
+            # Approach 3: Mobile user agent (フォールバック)
             {
                 'url': url,
                 'headers': {
@@ -238,44 +258,13 @@ class MetadataExtractor:
                     'Upgrade-Insecure-Requests': '1',
                 }
             },
-            # Approach 2: Facebook external crawler
+            # Approach 4: Facebook external crawler
             {
                 'url': url,
                 'headers': {
                     'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
-                }
-            },
-            # Approach 3: Desktop Chrome user agent
-            {
-                'url': url,
-                'headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9,ja;q=0.8',
-                    'Referer': 'https://www.tiktok.com/',
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache',
-                }
-            },
-            # Approach 4: Try without query parameters
-            {
-                'url': url.split('?')[0],  # Remove query parameters
-                'headers': {
-                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Referer': 'https://www.tiktok.com/',
-                }
-            },
-            # Approach 5: Try TikTok embed URL (similar to Instagram approach)
-            {
-                'url': f"https://www.tiktok.com/oembed?url={url}",
-                'headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'application/json,text/plain,*/*',
-                    'Referer': 'https://www.tiktok.com/',
                 }
             }
         ]
@@ -303,22 +292,27 @@ class MetadataExtractor:
                 if not html_text:
                     html_text = content.decode('utf-8', errors='replace')
                 
-                # Special handling for oEmbed JSON response
+                # Special handling for oEmbed JSON response - prioritized for accuracy
                 if approach['url'].startswith('https://www.tiktok.com/oembed'):
                     try:
                         import json
                         json_data = json.loads(html_text)
+                        logging.debug(f"TikTok oEmbed API response: {json_data}")
+                        
                         if json_data.get('title'):
                             title = json_data['title'].strip()
                             thumbnail_url = json_data.get('thumbnail_url')
                             author_name = json_data.get('author_name')
+                            
+                            # Extract username from URL if not provided in oEmbed response
                             if not author_name:
-                                # Extract username from URL if not provided
                                 username_match = re.search(r'tiktok\.com/@([^/]+)', url)
                                 if username_match:
                                     author_name = f"@{username_match.group(1)}"
                             
+                            logging.info(f"Successfully extracted TikTok metadata using oEmbed API")
                             logging.debug(f"TikTok oEmbed extraction results: title='{title}', thumbnail='{thumbnail_url}', author='{author_name}'")
+                            
                             return {
                                 "platform": "tiktok",
                                 "unique_video_id": video_id,
@@ -326,8 +320,12 @@ class MetadataExtractor:
                                 "thumbnailUrl": thumbnail_url,
                                 "authorName": author_name
                             }
+                        else:
+                            logging.debug(f"TikTok oEmbed response missing title field: {json_data}")
+                            continue
+                            
                     except (json.JSONDecodeError, TypeError, AttributeError, KeyError) as e:
-                        logging.debug(f"Failed to parse oEmbed response: {e}")
+                        logging.debug(f"Failed to parse oEmbed response: {e}, raw content: {html_text[:200]}...")
                         continue
                 
                 soup = BeautifulSoup(html_text, 'html.parser')
