@@ -374,17 +374,32 @@ class MetadataExtractor:
         if not data.get('items'):
             raise ValueError("Playlist not found or is empty")
         
-        # Extract video list
+        # Extract video IDs for batch API call
+        video_ids = []
+        for item in data.get('items', []):
+            snippet = item.get('snippet', {})
+            video_id = snippet.get('resourceId', {}).get('videoId')
+            if video_id:
+                video_ids.append(video_id)
+        
+        # Get detailed video information including author names
+        video_details = self._get_videos_details_batch(video_ids)
+        
+        # Extract video list with author information
         video_list = []
         for item in data.get('items', []):
             snippet = item.get('snippet', {})
             video_id = snippet.get('resourceId', {}).get('videoId')
             if video_id:
+                # Get author name from detailed video info
+                video_detail = video_details.get(video_id, {})
+                
                 video_info = {
                     'title': snippet.get('title'),
                     'videoUrl': f"https://www.youtube.com/watch?v={video_id}",
                     'thumbnailUrl': snippet.get('thumbnails', {}).get('high', {}).get('url'),
-                    'unique_video_id': video_id
+                    'unique_video_id': video_id,
+                    'authorName': video_detail.get('authorName')
                 }
                 video_list.append(video_info)
         
@@ -401,3 +416,35 @@ class MetadataExtractor:
             "playlist_videos": video_list,
             "video_count": len(video_list)
         }
+    
+    def _get_videos_details_batch(self, video_ids: list) -> dict:
+        """Get detailed information for multiple videos in a batch request"""
+        if not video_ids:
+            return {}
+        
+        # YouTube API allows up to 50 video IDs per request
+        api_url = "https://www.googleapis.com/youtube/v3/videos"
+        params = {
+            'part': 'snippet',
+            'id': ','.join(video_ids),
+            'key': self.youtube_api_key
+        }
+        
+        response = self.session.get(api_url, params=params, timeout=15)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # Create a dictionary mapping video_id to video details
+        video_details = {}
+        for item in data.get('items', []):
+            video_id = item.get('id')
+            snippet = item.get('snippet', {})
+            if video_id:
+                video_details[video_id] = {
+                    'authorName': snippet.get('channelTitle'),
+                    'title': snippet.get('title'),
+                    'thumbnailUrl': snippet.get('thumbnails', {}).get('high', {}).get('url')
+                }
+        
+        return video_details
