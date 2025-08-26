@@ -223,41 +223,208 @@ class MetadataExtractor:
     
     def _scrape_tiktok_metadata(self, url: str, video_id: str) -> dict:
         """Scrape TikTok metadata from web page"""
-        response = self.session.get(url, timeout=10)
-        response.raise_for_status()
+        # TikTok requires special handling due to their anti-bot measures
+        approaches = [
+            # Approach 1: Mobile user agent
+            {
+                'url': url,
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Referer': 'https://www.tiktok.com/',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                }
+            },
+            # Approach 2: Facebook external crawler
+            {
+                'url': url,
+                'headers': {
+                    'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                }
+            },
+            # Approach 3: Desktop Chrome user agent
+            {
+                'url': url,
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9,ja;q=0.8',
+                    'Referer': 'https://www.tiktok.com/',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache',
+                }
+            },
+            # Approach 4: Try without query parameters
+            {
+                'url': url.split('?')[0],  # Remove query parameters
+                'headers': {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': 'https://www.tiktok.com/',
+                }
+            }
+        ]
         
-        soup = BeautifulSoup(response.content, 'html.parser')
+        # Try each approach until one works
+        for i, approach in enumerate(approaches):
+            try:
+                logging.debug(f"Trying TikTok approach {i+1}: {approach['url']}")
+                response = self.session.get(approach['url'], headers=approach['headers'], timeout=15)
+                response.raise_for_status()
+                
+                # Handle encoding issues
+                content = response.content
+                html_text = ""
+                
+                # Try different encoding methods
+                encodings_to_try = ['utf-8', 'iso-8859-1', 'cp1252', 'latin1']
+                for encoding in encodings_to_try:
+                    try:
+                        html_text = content.decode(encoding, errors='ignore')
+                        break
+                    except (UnicodeDecodeError, UnicodeError):
+                        continue
+                
+                if not html_text:
+                    html_text = content.decode('utf-8', errors='replace')
+                
+                soup = BeautifulSoup(html_text, 'html.parser')
+                
+                # Debug: Log HTML structure for analysis
+                title_tag = soup.find('title')
+                meta_count = len(soup.find_all('meta'))
+                script_count = len(soup.find_all('script'))
+                
+                logging.debug(f"TikTok Approach {i+1} - Title: {title_tag}, Meta: {meta_count}, Scripts: {script_count}")
+                
+                # Skip if no useful content found
+                if meta_count < 3 and script_count < 3 and not title_tag:
+                    logging.debug(f"TikTok Approach {i+1} returned minimal content, trying next...")
+                    continue
+                
+                # Log some meta tags for debugging
+                meta_tags = soup.find_all('meta')
+                for j, tag in enumerate(meta_tags[:5]):  # Log first 5 meta tags
+                    if tag.get('property') or tag.get('name'):
+                        logging.debug(f"TikTok Approach {i+1} Meta tag {j}: {tag}")
+                
+                # Extract metadata from meta tags
+                title = None
+                thumbnail_url = None
+                author_name = None
+                
+                # Method 1: Extract title from various sources
+                title_sources = [
+                    soup.find('meta', property='og:title'),
+                    soup.find('meta', attrs={'name': 'title'}),
+                    soup.find('title'),
+                    soup.find('meta', property='twitter:title')
+                ]
+                
+                for source in title_sources:
+                    if source:
+                        if hasattr(source, 'get') and source.get('content'):
+                            title = source.get('content').strip()
+                            break
+                        elif hasattr(source, 'get_text') and source.get_text():
+                            title = source.get_text().strip()
+                            break
+                
+                # Method 2: Extract thumbnail from various sources
+                thumbnail_sources = [
+                    soup.find('meta', property='og:image'),
+                    soup.find('meta', property='og:image:secure_url'),
+                    soup.find('meta', attrs={'name': 'twitter:image'}),
+                    soup.find('meta', attrs={'name': 'thumbnail'})
+                ]
+                
+                for source in thumbnail_sources:
+                    if source and hasattr(source, 'get') and source.get('content'):
+                        thumbnail_url = source.get('content').strip()
+                        break
+                
+                # Method 3: Extract author name from multiple sources
+                author_sources = [
+                    soup.find('meta', property='og:description'),
+                    soup.find('meta', attrs={'name': 'description'}),
+                    soup.find('meta', property='twitter:description')
+                ]
+                
+                for source in author_sources:
+                    if source and hasattr(source, 'get') and source.get('content'):
+                        description = source.get('content', '').strip()
+                        if description and '@' in description:
+                            author_match = re.search(r'@([^\s,\.\!\?]+)', description)
+                            if author_match:
+                                author_name = f"@{author_match.group(1)}"
+                                break
+                
+                # Method 4: Try to extract username from URL if not found
+                if not author_name and url:
+                    username_match = re.search(r'tiktok\.com/@([^/]+)', url)
+                    if username_match:
+                        author_name = f"@{username_match.group(1)}"
+                
+                # Method 5: Look for JSON-LD or script data
+                if not title or not thumbnail_url:
+                    scripts = soup.find_all('script')
+                    for script in scripts:
+                        if script.string and len(script.string) > 100:
+                            script_text = script.string
+                            # Look for TikTok specific data patterns
+                            if '"title"' in script_text and '"video"' in script_text:
+                                try:
+                                    # Try to extract from JSON data
+                                    import json
+                                    # Look for JSON-like patterns
+                                    json_match = re.search(r'\{[^{}]*"title"[^{}]*\}', script_text)
+                                    if json_match:
+                                        json_data = json.loads(json_match.group())
+                                        if not title and 'title' in json_data:
+                                            title = json_data['title']
+                                        break
+                                except (json.JSONDecodeError, TypeError, AttributeError):
+                                    continue
+                
+                # Log extracted data for debugging
+                logging.debug(f"TikTok Approach {i+1} extraction results: title='{title}', thumbnail='{thumbnail_url}', author='{author_name}'")
+                
+                # If we found some meaningful metadata, return it
+                if title or thumbnail_url or (author_name and len(author_name) > 1):
+                    logging.debug(f"Successfully extracted TikTok metadata using approach {i+1}")
+                    return {
+                        "platform": "tiktok",
+                        "unique_video_id": video_id,
+                        "title": title,
+                        "thumbnailUrl": thumbnail_url,
+                        "authorName": author_name
+                    }
+                
+            except Exception as e:
+                logging.debug(f"TikTok Approach {i+1} failed: {e}")
+                continue
         
-        # Extract metadata from meta tags
-        title = None
-        thumbnail_url = None
+        # If all approaches failed, return minimal data
+        logging.warning("All TikTok extraction approaches failed")
+        
+        # Extract username from URL as fallback
         author_name = None
-        
-        # Extract title
-        title_tag = soup.find('meta', property='og:title')
-        if title_tag and hasattr(title_tag, 'get'):
-            title = title_tag.get('content')
-        
-        # Extract thumbnail
-        thumbnail_tag = soup.find('meta', property='og:image')
-        if thumbnail_tag and hasattr(thumbnail_tag, 'get'):
-            thumbnail_url = thumbnail_tag.get('content')
-        
-        # Extract author name (usually in the title or description)
-        description_tag = soup.find('meta', property='og:description')
-        if description_tag and hasattr(description_tag, 'get'):
-            description = description_tag.get('content', '')
-            # TikTok descriptions often contain author info
-            if description and '@' in description:
-                author_match = re.search(r'@([^\s]+)', description)
-                if author_match:
-                    author_name = f"@{author_match.group(1)}"
+        if url:
+            username_match = re.search(r'tiktok\.com/@([^/]+)', url)
+            if username_match:
+                author_name = f"@{username_match.group(1)}"
         
         return {
             "platform": "tiktok",
             "unique_video_id": video_id,
-            "title": title,
-            "thumbnailUrl": thumbnail_url,
+            "title": None,
+            "thumbnailUrl": None,
             "authorName": author_name
         }
     
