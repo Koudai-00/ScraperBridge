@@ -383,9 +383,11 @@ class MetadataExtractor:
                                     title = content.replace('TikTok ·', '').strip()
                                     break
                             elif content != 'TikTok' and len(content) > 6:
-                                # Use content if it's not just "TikTok" and has meaningful length
-                                title = content
-                                break
+                                # Clean TikTok description format
+                                cleaned_title = self._clean_tiktok_title(content)
+                                if cleaned_title:
+                                    title = cleaned_title
+                                    break
                 
                 # Method 2: Extract thumbnail from various sources
                 thumbnail_sources = [
@@ -450,7 +452,12 @@ class MetadataExtractor:
                                                 len(potential_title) > 3 and 
                                                 potential_title not in ['TikTok', '名無し', 'Untitled', ''] and
                                                 not potential_title.startswith('TikTok ·')):
-                                                title = potential_title
+                                                # Clean the title using our cleaning function
+                                                cleaned_title = self._clean_tiktok_title(potential_title)
+                                                if cleaned_title and cleaned_title != potential_title:
+                                                    title = cleaned_title
+                                                else:
+                                                    title = potential_title
                                                 logging.debug(f"Found title in script data: {title}")
                                                 break
                                     
@@ -465,7 +472,12 @@ class MetadataExtractor:
                                                     len(potential_title) > 3 and
                                                     potential_title not in ['TikTok', '名無し', 'Untitled'] and
                                                     not potential_title.startswith('TikTok ·')):
-                                                    title = potential_title
+                                                    # Clean the title using our cleaning function
+                                                    cleaned_title = self._clean_tiktok_title(potential_title)
+                                                    if cleaned_title and cleaned_title != potential_title:
+                                                        title = cleaned_title
+                                                    else:
+                                                        title = potential_title
                                                     break
                                         except (json.JSONDecodeError, TypeError, AttributeError):
                                             continue
@@ -715,6 +727,54 @@ class MetadataExtractor:
             "thumbnailUrl": None,
             "authorName": author_name
         }
+    
+    def _clean_tiktok_title(self, content: str) -> str:
+        """Clean TikTok title by removing stats and extracting actual title"""
+        if not content:
+            return ""
+        
+        # Remove likes, comments, and other TikTok stats
+        # Pattern: "14.5K likes, 165 comments. "とびっきりの水着で来たのにw""
+        
+        # Look for quoted text (actual title)
+        import re
+        
+        # Method 1: Extract text in quotes
+        quote_patterns = [
+            r'"([^"]+)"',  # Double quotes
+            r'"([^"]+)"',  # Japanese quotes
+            r"'([^']+)'",  # Single quotes
+        ]
+        
+        for pattern in quote_patterns:
+            match = re.search(pattern, content)
+            if match:
+                title = match.group(1).strip()
+                if title and len(title) > 2:
+                    return title
+        
+        # Method 2: Remove stats pattern and use remaining text
+        # Remove patterns like "14.5K likes, 165 comments."
+        stats_pattern = r'^\d+\.?\d*[KMB]?\s+(likes|comments|views|shares)[,\s]*(\d+\.?\d*[KMB]?\s+(likes|comments|views|shares)[,\s]*)*\.?\s*'
+        cleaned = re.sub(stats_pattern, '', content, flags=re.IGNORECASE)
+        
+        # Remove leading/trailing punctuation and whitespace
+        cleaned = cleaned.strip(' ."\'')
+        
+        # If we have meaningful content after cleaning, use it
+        if cleaned and len(cleaned) > 2 and cleaned != content:
+            return cleaned
+        
+        # Method 3: If no quotes found, try to extract from end of string
+        # Sometimes title is at the end after stats
+        parts = content.split('.')
+        if len(parts) > 1:
+            last_part = parts[-1].strip(' "\'')
+            if last_part and len(last_part) > 2:
+                return last_part
+        
+        # Fallback: return original if no cleaning was possible
+        return content
     
     def _is_youtube_playlist(self, url: str) -> bool:
         """Check if the URL is a YouTube playlist"""
