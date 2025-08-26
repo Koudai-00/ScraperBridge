@@ -69,7 +69,7 @@ class MetadataExtractor {
         const url = this.urlInput.value.trim();
         
         if (!url) {
-            this.showError('Please enter a valid URL');
+            this.showError('有効なURLを入力してください');
             return;
         }
 
@@ -94,7 +94,7 @@ class MetadataExtractor {
 
         } catch (error) {
             console.error('Error extracting metadata:', error);
-            this.showError(`Failed to extract metadata: ${error.message}`);
+            this.showError(`メタデータの抽出に失敗しました: ${error.message}`);
         } finally {
             this.hideLoading();
         }
@@ -105,13 +105,13 @@ class MetadataExtractor {
         this.resultsSection.style.display = 'none';
         this.errorSection.style.display = 'none';
         this.extractBtn.disabled = true;
-        this.extractBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+        this.extractBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>処理中...';
     }
 
     hideLoading() {
         this.loadingSection.style.display = 'none';
         this.extractBtn.disabled = false;
-        this.extractBtn.innerHTML = '<i class="fas fa-magic me-2"></i>Extract Metadata';
+        this.extractBtn.innerHTML = '<i class="fas fa-magic me-2"></i>メタデータを抽出';
     }
 
     displayResults(metadata) {
@@ -123,9 +123,9 @@ class MetadataExtractor {
         this.updatePlatformBadge(metadata.platform);
 
         // Update metadata displays
-        this.titleDisplay.textContent = metadata.title || 'Not available';
-        this.authorDisplay.textContent = metadata.authorName || 'Not available';
-        this.videoIdDisplay.textContent = metadata.unique_video_id || 'Not available';
+        this.titleDisplay.textContent = metadata.title || '取得できませんでした';
+        this.authorDisplay.textContent = metadata.authorName || '取得できませんでした';
+        this.videoIdDisplay.textContent = metadata.unique_video_id || '取得できませんでした';
 
         // Update thumbnail
         this.updateThumbnail(metadata.thumbnailUrl);
@@ -156,7 +156,7 @@ class MetadataExtractor {
             },
             other: { 
                 icon: 'fas fa-question', 
-                text: 'Unknown',
+                text: '不明',
                 class: 'bg-secondary'
             }
         };
@@ -217,18 +217,18 @@ class MetadataExtractor {
 
         // Reset displays
         this.platformBadge.className = 'badge bg-info fs-6';
-        this.platformBadge.innerHTML = '<i class="fas fa-tag me-1"></i>Platform';
+        this.platformBadge.innerHTML = '<i class="fas fa-tag me-1"></i>プラットフォーム';
         this.titleDisplay.textContent = '-';
         this.authorDisplay.textContent = '-';
         this.videoIdDisplay.textContent = '-';
-        this.jsonResponse.textContent = 'No data';
+        this.jsonResponse.textContent = 'データがありません';
         
         // Reset thumbnail
         this.showThumbnailPlaceholder();
         
         // Reset button
         this.extractBtn.disabled = false;
-        this.extractBtn.innerHTML = '<i class="fas fa-magic me-2"></i>Extract Metadata';
+        this.extractBtn.innerHTML = '<i class="fas fa-magic me-2"></i>メタデータを抽出';
     }
 }
 
@@ -237,9 +237,9 @@ document.addEventListener('DOMContentLoaded', () => {
     new MetadataExtractor();
     
     // Add some helpful console messages for developers
-    console.log('🚀 SNS Metadata Extractor initialized');
-    console.log('📚 API Documentation:');
-    console.log('  POST /api/v2/get-metadata - Extract metadata from URLs');
-    console.log('  POST /api/get-metadata - Legacy endpoint');
-    console.log('  GET /api/health - Health check');
+    console.log('🚀 SNSメタデータ抽出ツールが初期化されました');
+    console.log('📚 API ドキュメント:');
+    console.log('  POST /api/v2/get-metadata - URLからメタデータを抽出');
+    console.log('  POST /api/get-metadata - 旧エンドポイント');
+    console.log('  GET /api/health - ヘルスチェック');
 });

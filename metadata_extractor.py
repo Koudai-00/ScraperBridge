@@ -90,7 +90,7 @@ class MetadataExtractor:
             if match:
                 return match.group(1)
         
-        return None
+        return ""
     
     def _get_youtube_api_metadata(self, video_id: str) -> dict:
         """Get YouTube metadata using YouTube Data API"""
@@ -129,20 +129,20 @@ class MetadataExtractor:
         # Extract title
         title = None
         title_tag = soup.find('meta', property='og:title')
-        if title_tag:
+        if title_tag and hasattr(title_tag, 'get'):
             title = title_tag.get('content')
         
         # Extract thumbnail
         thumbnail_url = None
         thumbnail_tag = soup.find('meta', property='og:image')
-        if thumbnail_tag:
+        if thumbnail_tag and hasattr(thumbnail_tag, 'get'):
             thumbnail_url = thumbnail_tag.get('content')
         
         # Extract author name from page title or meta tags
         author_name = None
         # Try to find channel name in various places
         for script in soup.find_all('script'):
-            if script.string and '"channelName"' in script.string:
+            if hasattr(script, 'string') and script.string and '"channelName"' in script.string:
                 try:
                     # This is a simplified extraction - in production you'd want more robust parsing
                     import json
@@ -196,7 +196,7 @@ class MetadataExtractor:
         """Extract TikTok video ID from URL"""
         clean_url = url.split('?')[0]
         match = re.search(r'\/video\/(\d+)', clean_url)
-        return match.group(1) if match else None
+        return match.group(1) if match else ""
     
     def _get_tiktok_supabase_metadata(self, url: str, video_id: str) -> dict:
         """Get TikTok metadata using Supabase function"""
@@ -231,20 +231,20 @@ class MetadataExtractor:
         
         # Extract title
         title_tag = soup.find('meta', property='og:title')
-        if title_tag:
+        if title_tag and hasattr(title_tag, 'get'):
             title = title_tag.get('content')
         
         # Extract thumbnail
         thumbnail_tag = soup.find('meta', property='og:image')
-        if thumbnail_tag:
+        if thumbnail_tag and hasattr(thumbnail_tag, 'get'):
             thumbnail_url = thumbnail_tag.get('content')
         
         # Extract author name (usually in the title or description)
         description_tag = soup.find('meta', property='og:description')
-        if description_tag:
+        if description_tag and hasattr(description_tag, 'get'):
             description = description_tag.get('content', '')
             # TikTok descriptions often contain author info
-            if '@' in description:
+            if description and '@' in description:
                 author_match = re.search(r'@([^\s]+)', description)
                 if author_match:
                     author_name = f"@{author_match.group(1)}"
@@ -273,7 +273,7 @@ class MetadataExtractor:
         """Extract Instagram post ID (shortcode) from URL"""
         clean_url = url.split('?')[0]
         match = re.search(r'\/(p|reel)\/([A-Za-z0-9-_]+)', clean_url)
-        return match.group(2) if match else None
+        return match.group(2) if match else ""
     
     def _scrape_instagram_metadata(self, url: str, post_id: str) -> dict:
         """Scrape Instagram metadata from web page"""
@@ -299,16 +299,18 @@ class MetadataExtractor:
         
         # Extract title/caption
         title_tag = soup.find('meta', property='og:title')
-        if title_tag:
-            title = title_tag.get('content')
-            # Instagram titles often contain author info
-            if ' on Instagram:' in title:
-                author_name = title.split(' on Instagram:')[0]
-                title = title.split(': "')[1].rstrip('"') if ': "' in title else title
+        if title_tag and hasattr(title_tag, 'get'):
+            title_content = title_tag.get('content')
+            if title_content:
+                title = title_content
+                # Instagram titles often contain author info
+                if ' on Instagram:' in title:
+                    author_name = title.split(' on Instagram:')[0]
+                    title = title.split(': "')[1].rstrip('"') if ': "' in title else title
         
         # Extract thumbnail
         thumbnail_tag = soup.find('meta', property='og:image')
-        if thumbnail_tag:
+        if thumbnail_tag and hasattr(thumbnail_tag, 'get'):
             thumbnail_url = thumbnail_tag.get('content')
         
         return {
