@@ -142,6 +142,123 @@ def get_videos_from_playlist():
             "error": f"Internal server error: {str(e)}"
         }), 500
 
+@api_bp.route('/batch-metadata', methods=['POST'])
+def batch_get_metadata():
+    """
+    Get metadata for multiple URLs in a single request
+    
+    Request body:
+    {
+        "urls": [
+            "https://www.youtube.com/watch?v=...",
+            "https://www.tiktok.com/@user/video/...",
+            "https://www.instagram.com/p/..."
+        ]
+    }
+    
+    Response:
+    {
+        "results": [
+            {
+                "url": "https://www.youtube.com/watch?v=...",
+                "success": true,
+                "data": {
+                    "platform": "youtube",
+                    "title": "Video Title",
+                    "authorName": "Channel Name",
+                    "thumbnailUrl": "...",
+                    "unique_video_id": "..."
+                }
+            },
+            {
+                "url": "https://www.tiktok.com/@user/video/...",
+                "success": false,
+                "error": "Failed to extract metadata"
+            }
+        ],
+        "summary": {
+            "total": 3,
+            "successful": 2,
+            "failed": 1
+        }
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data or 'urls' not in data:
+            return jsonify({
+                "error": "Missing 'urls' field in request body"
+            }), 400
+        
+        urls = data['urls']
+        if not isinstance(urls, list):
+            return jsonify({
+                "error": "'urls' must be an array"
+            }), 400
+        
+        if len(urls) == 0:
+            return jsonify({
+                "error": "URLs array cannot be empty"
+            }), 400
+        
+        # Limit to prevent abuse
+        max_urls = 50
+        if len(urls) > max_urls:
+            return jsonify({
+                "error": f"Maximum {max_urls} URLs allowed per request"
+            }), 400
+        
+        logging.info(f"Processing batch metadata request for {len(urls)} URLs")
+        
+        results = []
+        successful_count = 0
+        failed_count = 0
+        
+        for url in urls:
+            try:
+                if not isinstance(url, str) or not url.strip():
+                    results.append({
+                        "url": url,
+                        "success": False,
+                        "error": "Invalid URL format"
+                    })
+                    failed_count += 1
+                    continue
+                
+                # Process each URL individually
+                metadata = extractor.extract_metadata(url.strip())
+                
+                results.append({
+                    "url": url,
+                    "success": True,
+                    "data": metadata
+                })
+                successful_count += 1
+                
+            except Exception as e:
+                logging.warning(f"Failed to process URL {url}: {str(e)}")
+                results.append({
+                    "url": url,
+                    "success": False,
+                    "error": str(e)
+                })
+                failed_count += 1
+        
+        return jsonify({
+            "results": results,
+            "summary": {
+                "total": len(urls),
+                "successful": successful_count,
+                "failed": failed_count
+            }
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Unexpected error in batch metadata processing: {str(e)}")
+        return jsonify({
+            "error": f"Internal server error: {str(e)}"
+        }), 500
+
 @api_bp.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
