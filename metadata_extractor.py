@@ -190,10 +190,74 @@ class MetadataExtractor:
         return self._scrape_tiktok_metadata(final_url, video_id)
     
     def _resolve_tiktok_url(self, url: str) -> str:
-        """Resolve TikTok short URLs to full URLs"""
+        """Resolve TikTok short URLs and TikTok Lite URLs to full URLs"""
+        # Handle TikTok Lite URLs (lite.tiktok.com)
+        if "lite.tiktok.com" in url:
+            logging.info(f"Resolving TikTok Lite URL: {url}")
+            try:
+                # Follow redirects to get the actual TikTok URL
+                response = self.session.get(url, allow_redirects=True, timeout=10)
+                final_url = response.url
+                logging.info(f"TikTok Lite URL resolved to: {final_url}")
+                
+                # If it's still a lite URL, try to extract the actual video URL from the page
+                if "lite.tiktok.com" in final_url or not self._extract_tiktok_id(final_url):
+                    logging.info("Attempting to extract actual TikTok URL from TikTok Lite page")
+                    
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    
+                    # Look for canonical URL
+                    canonical_link = soup.find('link', rel='canonical')
+                    if canonical_link and canonical_link.get('href'):
+                        canonical_url = canonical_link.get('href')
+                        if "tiktok.com" in canonical_url and "/video/" in canonical_url:
+                            logging.info(f"Found canonical URL: {canonical_url}")
+                            return canonical_url
+                    
+                    # Look for og:url meta tag
+                    og_url = soup.find('meta', property='og:url')
+                    if og_url and og_url.get('content'):
+                        og_url_content = og_url.get('content')
+                        if "tiktok.com" in og_url_content and "/video/" in og_url_content:
+                            logging.info(f"Found og:url: {og_url_content}")
+                            return og_url_content
+                    
+                    # Look for Twitter card URL
+                    twitter_url = soup.find('meta', attrs={'name': 'twitter:url'})
+                    if twitter_url and twitter_url.get('content'):
+                        twitter_url_content = twitter_url.get('content')
+                        if "tiktok.com" in twitter_url_content and "/video/" in twitter_url_content:
+                            logging.info(f"Found Twitter URL: {twitter_url_content}")
+                            return twitter_url_content
+                    
+                    # Look for video URLs in script tags
+                    import re
+                    script_tags = soup.find_all('script')
+                    for script in script_tags:
+                        if script.string:
+                            # Look for TikTok video URLs in JavaScript
+                            tiktok_urls = re.findall(r'https://[^"]*tiktok\.com/[^"]*video/\d+[^"]*', script.string)
+                            for tiktok_url in tiktok_urls:
+                                if "lite.tiktok.com" not in tiktok_url:
+                                    logging.info(f"Found TikTok URL in script: {tiktok_url}")
+                                    return tiktok_url.split('?')[0]  # Remove query parameters
+                
+                return final_url
+                
+            except Exception as e:
+                logging.error(f"Error resolving TikTok Lite URL: {e}")
+                return url
+        
+        # Handle other short URLs
         if "vt.tiktok.com" in url or "vm.tiktok.com" in url:
-            response = self.session.head(url, allow_redirects=True, timeout=10)
-            return response.url
+            try:
+                response = self.session.head(url, allow_redirects=True, timeout=10)
+                return response.url
+            except Exception as e:
+                logging.error(f"Error resolving short TikTok URL: {e}")
+                return url
+        
         return url
     
     def _extract_tiktok_id(self, url: str) -> str:
