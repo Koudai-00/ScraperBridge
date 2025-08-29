@@ -36,7 +36,7 @@ class RankingCalculator:
             unique_video_id,
             COUNT(*) as video_count,
             platform
-        FROM videos 
+        FROM videos_ranking 
         WHERE 1=1 {}
         GROUP BY unique_video_id, platform
         ORDER BY video_count DESC, unique_video_id
@@ -108,7 +108,7 @@ class RankingCalculator:
             with self.get_db_connection() as conn:
                 with conn.cursor() as cur:
                     # 既存のサンプルデータをクリア
-                    cur.execute("DELETE FROM videos WHERE author_name IN ('Rick Astley', 'officialpsy', 'GINTA OFFICIAL', '千葉うまグルメ', 'Mizuki')")
+                    cur.execute("DELETE FROM videos_ranking WHERE author_name IN ('Rick Astley', 'officialpsy', 'GINTA OFFICIAL', '千葉うまグルメ', 'Mizuki')")
                     
                     # サンプルデータを複数回挿入してランキングを作成
                     for i in range(count):
@@ -117,7 +117,7 @@ class RankingCalculator:
                             insert_count = hash(video_id + str(i)) % 10 + 1  # 1-10回のランダム挿入
                             for _ in range(insert_count):
                                 cur.execute("""
-                                    INSERT INTO videos (unique_video_id, platform, title, author_name, created_at)
+                                    INSERT INTO videos_ranking (unique_video_id, platform, title, author_name, created_at)
                                     VALUES (%s, %s, %s, %s, %s)
                                     ON CONFLICT (unique_video_id) DO NOTHING
                                 """, (

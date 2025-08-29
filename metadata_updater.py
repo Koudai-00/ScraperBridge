@@ -38,7 +38,7 @@ class MetadataUpdater:
                         thumbnail_url,
                         author_name,
                         metadata_fetched_at
-                    FROM videos 
+                    FROM videos_ranking 
                     WHERE unique_video_id IN ({placeholders})
                     """
                     
@@ -87,7 +87,7 @@ class MetadataUpdater:
                     placeholders = ','.join(['%s'] * len(video_ids))
                     query = f"""
                     SELECT unique_video_id, platform 
-                    FROM videos 
+                    FROM videos_ranking 
                     WHERE unique_video_id IN ({placeholders})
                     """
                     
@@ -164,7 +164,7 @@ class MetadataUpdater:
                 with conn.cursor() as cur:
                     for video_id, metadata in metadata_batch.items():
                         cur.execute("""
-                            INSERT INTO videos (
+                            INSERT INTO videos_ranking (
                                 unique_video_id, 
                                 platform, 
                                 title, 
