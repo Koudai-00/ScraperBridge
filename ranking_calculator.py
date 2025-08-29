@@ -34,12 +34,12 @@ class RankingCalculator:
         query = """
         SELECT 
             unique_video_id,
-            COUNT(*) as video_count,
-            platform
-        FROM videos_ranking 
-        WHERE 1=1 {}
-        GROUP BY unique_video_id, platform
-        ORDER BY video_count DESC, unique_video_id
+            COUNT(*) as save_count,
+            source as platform
+        FROM videos 
+        WHERE unique_video_id IS NOT NULL {}
+        GROUP BY unique_video_id, source
+        ORDER BY save_count DESC, unique_video_id
         LIMIT %s
         """.format(date_filter)
         
