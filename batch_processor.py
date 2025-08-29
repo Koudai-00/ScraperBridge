@@ -90,9 +90,9 @@ class BatchProcessor:
                         )
                     """)
                     
-                    # インデックス作成
-                    cur.execute("CREATE INDEX idx_rankings_temp_period_rank ON rankings_temp(period_type, rank_position)")
-                    cur.execute("CREATE INDEX idx_rankings_temp_video_id ON rankings_temp(unique_video_id)")
+                    # インデックス作成（IF NOT EXISTSで重複エラー回避）
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_rankings_temp_period_rank ON rankings_temp(period_type, rank_position)")
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_rankings_temp_video_id ON rankings_temp(unique_video_id)")
                     
                     # 新しいランキングデータを挿入
                     total_inserted = 0
