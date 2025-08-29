@@ -428,25 +428,62 @@ def manual_ranking_update():
     try:
         from flask import current_app
         
+        import time
+        start_time = time.time()
+        
         try:
             from app import app as main_app
             if hasattr(main_app, 'ranking_scheduler') and main_app.ranking_scheduler:
                 result = main_app.ranking_scheduler.run_manual_update()
+                
+                end_time = time.time()
+                execution_time = round(end_time - start_time, 2)
+                
+                if result:
+                    # 統計情報を取得
+                    stats = main_app.ranking_scheduler.batch_processor.get_ranking_stats()
+                    logging.info(f"Manual ranking update completed successfully in {execution_time}s")
+                    return jsonify({
+                        'success': True,
+                        'message': 'ランキング更新が正常に完了しました',
+                        'execution_time': execution_time,
+                        'stats': stats
+                    }), 200
+                else:
+                    logging.error(f"Manual ranking update failed after {execution_time}s")
+                    return jsonify({
+                        'success': False,
+                        'error': 'ランキング更新処理が失敗しました',
+                        'execution_time': execution_time
+                    }), 500
             else:
-                result = {'success': False, 'message': 'Scheduler not available'}
+                return jsonify({
+                    "success": False,
+                    "error": "ランキングスケジューラが利用できません"
+                }), 503
+                
         except Exception as scheduler_error:
-            logging.error(f"Scheduler access error: {scheduler_error}")
-            result = {'success': False, 'message': f'Scheduler error: {str(scheduler_error)}'}
+            end_time = time.time()
+            execution_time = round(end_time - start_time, 2)
+            error_msg = str(scheduler_error)
+            logging.error(f"Scheduler access error after {execution_time}s: {error_msg}")
             
-            if result['success']:
-                return jsonify(result), 200
+            # エラーの種類に応じて詳細メッセージを作成
+            if "timeout" in error_msg.lower():
+                detailed_error = "処理がタイムアウトしました。大量のデータ処理中の可能性があります。"
+            elif "database" in error_msg.lower() or "connection" in error_msg.lower():
+                detailed_error = "データベース接続エラーが発生しました。"
+            elif "memory" in error_msg.lower():
+                detailed_error = "メモリ不足エラーが発生しました。"
             else:
-                return jsonify(result), 500
-        else:
+                detailed_error = f"予期しないエラーが発生しました: {error_msg}"
+            
             return jsonify({
-                "success": False,
-                "message": "Ranking scheduler not available"
-            }), 503
+                'success': False,
+                'error': detailed_error,
+                'technical_error': error_msg,
+                'execution_time': execution_time
+            }), 500
         
     except Exception as e:
         logging.error(f"Error in manual ranking update: {e}")

@@ -19,15 +19,14 @@ try:
     
     ranking_scheduler = RankingScheduler()
     
-    # 本番環境では毎日午前2時に実行、開発環境では5分間隔のテストモードで実行
+    # 本番環境では毎日午前2時に実行、開発環境では手動実行のみ
     if os.getenv('FLASK_ENV') == 'production':
         ranking_scheduler.setup_daily_job(hour=2, minute=0)
+        ranking_scheduler.start_scheduler()
         logging.info("Ranking scheduler set up for production (daily at 2:00 AM)")
     else:
-        ranking_scheduler.setup_test_job(interval_minutes=5)
-        logging.info("Ranking scheduler set up for development (every 5 minutes)")
-    
-    ranking_scheduler.start_scheduler()
+        # 開発環境では自動実行しない（手動ボタンのみ）
+        logging.info("Development mode: Manual ranking execution only")
     
     # スケジューラーをアプリのコンテキストで利用可能にする
     app.ranking_scheduler = ranking_scheduler

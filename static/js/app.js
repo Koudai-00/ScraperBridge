@@ -35,6 +35,16 @@ class MetadataExtractor {
         // Control elements
         this.clearResults = document.getElementById('clearResults');
         this.exampleUrlButtons = document.querySelectorAll('.example-url');
+        
+        // Ranking test elements
+        this.rankingTestBtn = document.getElementById('rankingTestBtn');
+        this.rankingProgressSection = document.getElementById('rankingProgressSection');
+        this.rankingResultSection = document.getElementById('rankingResultSection');
+        this.rankingAlert = document.getElementById('rankingAlert');
+        this.rankingIcon = document.getElementById('rankingIcon');
+        this.rankingStatus = document.getElementById('rankingStatus');
+        this.rankingMessage = document.getElementById('rankingMessage');
+        this.rankingTime = document.getElementById('rankingTime');
     }
 
     bindEvents() {
@@ -65,6 +75,13 @@ class MetadataExtractor {
                 this.clearAllResults();
             }
         });
+
+        // Ranking test button
+        if (this.rankingTestBtn) {
+            this.rankingTestBtn.addEventListener('click', () => {
+                this.runRankingTest();
+            });
+        }
     }
 
     async extractMetadata() {
@@ -293,6 +310,76 @@ class MetadataExtractor {
         // Reset button
         this.extractBtn.disabled = false;
         this.extractBtn.innerHTML = '<i class="fas fa-magic me-2"></i>メタデータを抽出';
+    }
+
+    async runRankingTest() {
+        try {
+            this.showRankingProgress();
+            
+            const response = await fetch('/api/rankings/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            const result = await response.json();
+            
+            if (response.ok && result.success) {
+                this.showRankingSuccess(result);
+            } else {
+                this.showRankingError(result.error || 'ランキング処理でエラーが発生しました');
+            }
+
+        } catch (error) {
+            console.error('Ranking test error:', error);
+            this.showRankingError(`処理エラー: ${error.message}`);
+        } finally {
+            this.hideRankingProgress();
+        }
+    }
+
+    showRankingProgress() {
+        this.rankingTestBtn.disabled = true;
+        this.rankingTestBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>実行中...';
+        this.rankingProgressSection.style.display = 'block';
+        this.rankingResultSection.style.display = 'none';
+    }
+
+    hideRankingProgress() {
+        this.rankingTestBtn.disabled = false;
+        this.rankingTestBtn.innerHTML = '<i class="fas fa-play-circle me-2"></i>ランキング処理テスト';
+        this.rankingProgressSection.style.display = 'none';
+    }
+
+    showRankingSuccess(result) {
+        this.rankingResultSection.style.display = 'block';
+        this.rankingAlert.className = 'alert alert-success mb-0';
+        this.rankingIcon.className = 'fas fa-check-circle me-2';
+        this.rankingStatus.textContent = '✅ 正常終了';
+        
+        let message = `ランキング処理が正常に完了しました。`;
+        if (result.stats) {
+            message += `\n総ランキング数: ${result.stats.total_rankings || 0}件`;
+            if (result.stats.periods) {
+                message += '\n期間別: ';
+                Object.entries(result.stats.periods).forEach(([period, info]) => {
+                    message += `${period}(${info.count}件) `;
+                });
+            }
+        }
+        
+        this.rankingMessage.textContent = message;
+        this.rankingTime.textContent = `実行時刻: ${new Date().toLocaleString('ja-JP')}`;
+    }
+
+    showRankingError(errorMsg) {
+        this.rankingResultSection.style.display = 'block';
+        this.rankingAlert.className = 'alert alert-danger mb-0';
+        this.rankingIcon.className = 'fas fa-exclamation-triangle me-2';
+        this.rankingStatus.textContent = '❌ 異常終了';
+        this.rankingMessage.textContent = `エラー: ${errorMsg}`;
+        this.rankingTime.textContent = `実行時刻: ${new Date().toLocaleString('ja-JP')}`;
     }
 }
 
