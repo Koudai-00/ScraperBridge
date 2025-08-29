@@ -151,22 +151,13 @@ class BatchProcessor:
                     
                     logging.info(f"Inserted {total_inserted} ranking entries into temp table")
                     
-                    # 古いテーブルをバックアップに移動し、新しいテーブルを本テーブルに昇格
-                    cur.execute("DROP TABLE IF EXISTS rankings_old")
-                    
-                    # rankingsテーブルが存在する場合はrankings_oldにリネーム
-                    cur.execute("""
-                        DO $$
-                        BEGIN
-                            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'rankings') THEN
-                                ALTER TABLE rankings RENAME TO rankings_old;
-                            END IF;
-                        END
-                        $$
-                    """)
-                    
-                    # テンポラリテーブルを本テーブルに昇格
+                    # 簡単な置き換え方式に変更（タイムアウト回避）
+                    cur.execute("DROP TABLE IF EXISTS rankings")
                     cur.execute("ALTER TABLE rankings_temp RENAME TO rankings")
+                    
+                    # インデックスを再作成
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_rankings_period_rank ON rankings(period_type, rank_position)")
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_rankings_video_id ON rankings(unique_video_id)")
                     
                     # コミット
                     conn.commit()
@@ -230,7 +221,7 @@ class BatchProcessor:
             logging.error(f"Error getting ranking stats: {e}")
             return {}
     
-    def create_test_data_and_run_sample(self):
+    def create_test_data_and_run_sample(self, dev_mode=True):
         """テスト用データを作成してサンプル実行"""
         try:
             # サンプルデータ作成
