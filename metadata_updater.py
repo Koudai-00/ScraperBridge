@@ -35,7 +35,7 @@ class MetadataUpdater:
                         unique_video_id,
                         source as platform,
                         video_title as title,
-                        video_author_icon_url as thumbnail_url,
+                        thumbnail_url,
                         video_author_name as author_name,
                         created_at as metadata_fetched_at
                     FROM videos 
