@@ -259,6 +259,202 @@ def batch_get_metadata():
             "error": f"Internal server error: {str(e)}"
         }), 500
 
+@api_bp.route('/rankings', methods=['GET'])
+def get_rankings():
+    """
+    Get current rankings for different periods
+    
+    Query parameters:
+    - period: daily, weekly, monthly, all_time (default: daily)
+    - limit: number of results to return (default: 10, max: 100)
+    
+    Response:
+    {
+        "period_type": "daily",
+        "rankings": [
+            {
+                "rank": 1,
+                "unique_video_id": "dQw4w9WgXcQ",
+                "platform": "youtube",
+                "title": "Video Title",
+                "thumbnail_url": "...",
+                "author_name": "Author",
+                "count": 42
+            }
+        ],
+        "last_updated": "2024-01-01T12:00:00"
+    }
+    """
+    try:
+        from flask import current_app
+        import psycopg2
+        
+        # Get query parameters
+        period_type = request.args.get('period', 'daily')
+        limit = min(int(request.args.get('limit', 10)), 100)
+        
+        # Validate period type
+        valid_periods = ['daily', 'weekly', 'monthly', 'all_time']
+        if period_type not in valid_periods:
+            return jsonify({
+                "error": f"Invalid period. Must be one of: {', '.join(valid_periods)}"
+            }), 400
+        
+        # Connect to database and get rankings
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            return jsonify({"error": "Database connection not available"}), 500
+        
+        with psycopg2.connect(database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        unique_video_id,
+                        platform,
+                        rank_position,
+                        count,
+                        title,
+                        thumbnail_url,
+                        author_name,
+                        updated_at
+                    FROM rankings
+                    WHERE period_type = %s
+                    ORDER BY rank_position
+                    LIMIT %s
+                """, (period_type, limit))
+                
+                results = cur.fetchall()
+                
+                rankings = []
+                last_updated = None
+                
+                for row in results:
+                    video_id, platform, rank_pos, count, title, thumbnail_url, author_name, updated_at = row
+                    
+                    rankings.append({
+                        "rank": rank_pos,
+                        "unique_video_id": video_id,
+                        "platform": platform,
+                        "title": title,
+                        "thumbnail_url": thumbnail_url,
+                        "author_name": author_name,
+                        "count": count
+                    })
+                    
+                    if not last_updated and updated_at:
+                        last_updated = updated_at.isoformat()
+        
+        return jsonify({
+            "period_type": period_type,
+            "rankings": rankings,
+            "last_updated": last_updated,
+            "total_results": len(rankings)
+        }), 200
+        
+    except ValueError as e:
+        return jsonify({"error": f"Invalid parameter: {str(e)}"}), 400
+    except Exception as e:
+        logging.error(f"Error getting rankings: {e}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+@api_bp.route('/rankings/stats', methods=['GET'])
+def get_ranking_stats():
+    """
+    Get ranking system statistics
+    
+    Response:
+    {
+        "periods": {
+            "daily": {"count": 100, "last_updated": "2024-01-01T12:00:00"},
+            "weekly": {"count": 100, "last_updated": "2024-01-01T12:00:00"},
+            ...
+        },
+        "platforms": {
+            "youtube": 250,
+            "tiktok": 150,
+            "instagram": 100
+        },
+        "total_rankings": 500,
+        "scheduler_status": {
+            "running": true,
+            "next_job": "2024-01-01T14:00:00"
+        }
+    }
+    """
+    try:
+        from flask import current_app
+        from batch_processor import BatchProcessor
+        
+        # Get ranking statistics
+        batch_processor = BatchProcessor()
+        stats = batch_processor.get_ranking_stats()
+        
+        # Get scheduler status if available
+        scheduler_status = {"running": False, "next_job": None}
+        try:
+            from app import app as main_app
+            if hasattr(main_app, 'ranking_scheduler') and main_app.ranking_scheduler:
+                job_status = main_app.ranking_scheduler.get_job_status()
+        except:
+            job_status = {}
+            scheduler_status = {
+                "running": job_status.get('scheduler_running', False),
+                "jobs": job_status.get('jobs', {})
+            }
+        
+        return jsonify({
+            "periods": stats.get('periods', {}),
+            "platforms": stats.get('platforms', {}),
+            "total_rankings": stats.get('total_rankings', 0),
+            "scheduler_status": scheduler_status
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error getting ranking stats: {e}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+@api_bp.route('/rankings/update', methods=['POST'])
+def manual_ranking_update():
+    """
+    Manually trigger ranking update
+    
+    Response:
+    {
+        "success": true,
+        "message": "Ranking update completed successfully",
+        "stats": {...}
+    }
+    """
+    try:
+        from flask import current_app
+        
+        try:
+            from app import app as main_app
+            if hasattr(main_app, 'ranking_scheduler') and main_app.ranking_scheduler:
+                result = main_app.ranking_scheduler.run_manual_update()
+            else:
+                result = {'success': False, 'message': 'Scheduler not available'}
+        except Exception as scheduler_error:
+            logging.error(f"Scheduler access error: {scheduler_error}")
+            result = {'success': False, 'message': f'Scheduler error: {str(scheduler_error)}'}
+            
+            if result['success']:
+                return jsonify(result), 200
+            else:
+                return jsonify(result), 500
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Ranking scheduler not available"
+            }), 503
+        
+    except Exception as e:
+        logging.error(f"Error in manual ranking update: {e}")
+        return jsonify({
+            "success": False,
+            "message": f"Error: {str(e)}"
+        }), 500
+
 @api_bp.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
