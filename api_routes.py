@@ -439,17 +439,26 @@ def manual_ranking_update():
                 end_time = time.time()
                 execution_time = round(end_time - start_time, 2)
                 
-                if result:
+                if isinstance(result, dict) and result.get('success'):
                     # 統計情報を取得
                     stats = main_app.ranking_scheduler.batch_processor.get_ranking_stats()
-                    logging.info(f"Manual ranking update completed successfully in {execution_time}s")
+                    logging.info(f"Manual ranking update completed successfully")
                     return jsonify({
                         'success': True,
-                        'message': 'ランキング更新が正常に完了しました',
-                        'execution_time': execution_time,
+                        'message': result.get('message', 'ランキング更新が正常に完了しました'),
+                        'execution_time': result.get('execution_time', execution_time),
                         'stats': stats
                     }), 200
+                elif isinstance(result, dict):
+                    # 辞書形式のエラーレスポンス
+                    logging.error(f"Manual ranking update failed: {result.get('error')}")
+                    return jsonify({
+                        'success': False,
+                        'error': result.get('error', 'ランキング更新処理が失敗しました'),
+                        'execution_time': result.get('execution_time', execution_time)
+                    }), 500
                 else:
+                    # 従来のbool型レスポンス
                     logging.error(f"Manual ranking update failed after {execution_time}s")
                     return jsonify({
                         'success': False,

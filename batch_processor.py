@@ -94,24 +94,16 @@ class BatchProcessor:
                     cur.execute("CREATE INDEX IF NOT EXISTS idx_rankings_temp_period_rank ON rankings_temp(period_type, rank_position)")
                     cur.execute("CREATE INDEX IF NOT EXISTS idx_rankings_temp_video_id ON rankings_temp(unique_video_id)")
                     
-                    # 新しいランキングデータを挿入
+                    # 新しいランキングデータを挿入（バッチ処理で最適化）
                     total_inserted = 0
+                    batch_data = []
+                    batch_size = 50  # タイムアウト回避のため小分け処理
+                    
                     for period_type, rankings in ranking_data.items():
                         for rank_position, (video_id, count) in enumerate(rankings, 1):
                             video_metadata = metadata.get(video_id, {})
                             
-                            cur.execute("""
-                                INSERT INTO rankings_temp (
-                                    unique_video_id,
-                                    platform,
-                                    rank_position,
-                                    period_type,
-                                    count,
-                                    title,
-                                    thumbnail_url,
-                                    author_name
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                            """, (
+                            batch_data.append((
                                 video_id,
                                 video_metadata.get('platform', 'unknown'),
                                 rank_position,
@@ -121,7 +113,41 @@ class BatchProcessor:
                                 video_metadata.get('thumbnailUrl'),
                                 video_metadata.get('authorName')
                             ))
-                            total_inserted += 1
+                            
+                            # バッチサイズに達したら一括挿入
+                            if len(batch_data) >= batch_size:
+                                cur.executemany("""
+                                    INSERT INTO rankings_temp (
+                                        unique_video_id,
+                                        platform,
+                                        rank_position,
+                                        period_type,
+                                        count,
+                                        title,
+                                        thumbnail_url,
+                                        author_name
+                                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                """, batch_data)
+                                total_inserted += len(batch_data)
+                                logging.info(f"Inserted batch of {len(batch_data)} items, total: {total_inserted}")
+                                batch_data = []
+                    
+                    # 残りのデータを挿入
+                    if batch_data:
+                        cur.executemany("""
+                            INSERT INTO rankings_temp (
+                                unique_video_id,
+                                platform,
+                                rank_position,
+                                period_type,
+                                count,
+                                title,
+                                thumbnail_url,
+                                author_name
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, batch_data)
+                        total_inserted += len(batch_data)
+                        logging.info(f"Inserted final batch of {len(batch_data)} items")
                     
                     logging.info(f"Inserted {total_inserted} ranking entries into temp table")
                     
