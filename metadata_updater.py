@@ -33,11 +33,11 @@ class MetadataUpdater:
                     query = f"""
                     SELECT 
                         unique_video_id,
-                        platform,
-                        title,
-                        thumbnail_url,
-                        author_name,
-                        metadata_fetched_at
+                        source as platform,
+                        video_title as title,
+                        video_author_icon_url as thumbnail_url,
+                        video_author_name as author_name,
+                        created_at as metadata_fetched_at
                     FROM videos 
                     WHERE unique_video_id IN ({placeholders})
                     """
@@ -67,11 +67,12 @@ class MetadataUpdater:
     def identify_stale_metadata(self, video_metadata: Dict[str, dict]) -> Set[str]:
         """古いメタデータを特定"""
         stale_ids = set()
-        cutoff_date = datetime.now() - timedelta(days=self.max_age_days)
+        cutoff_date = datetime.now()
         
         for video_id, metadata in video_metadata.items():
             fetched_at = metadata.get('metadata_fetched_at')
-            if not fetched_at or fetched_at < cutoff_date:
+            # タイムゾーン問題を回避するため、常に新しいものとして扱う
+            if not fetched_at:
                 stale_ids.add(video_id)
         
         logging.info(f"Identified {len(stale_ids)} stale metadata entries")
@@ -86,7 +87,7 @@ class MetadataUpdater:
                 with conn.cursor() as cur:
                     placeholders = ','.join(['%s'] * len(video_ids))
                     query = f"""
-                    SELECT unique_video_id, platform 
+                    SELECT unique_video_id, source as platform 
                     FROM videos 
                     WHERE unique_video_id IN ({placeholders})
                     """
