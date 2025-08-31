@@ -33,9 +33,9 @@ class BatchProcessor:
         logging.info("Starting daily ranking batch process")
         
         try:
-            # Step 1: 全期間のランキングを計算
+            # Step 1: 全期間のランキングを計算（制限を小さくしてタイムアウト回避）
             logging.info("Step 1: Calculating rankings for all periods")
-            ranking_data = self.ranking_calculator.get_top_video_ids_by_periods(limit=100)
+            ranking_data = self.ranking_calculator.get_top_video_ids_by_periods(limit=50)
             
             if not any(ranking_data.values()):
                 logging.warning("No ranking data calculated - skipping batch process")
@@ -97,7 +97,7 @@ class BatchProcessor:
                     # 新しいランキングデータを挿入（バッチ処理で最適化）
                     total_inserted = 0
                     batch_data = []
-                    batch_size = 50  # タイムアウト回避のため小分け処理
+                    batch_size = 25  # さらに小分けしてタイムアウト回避
                     
                     for period_type, rankings in ranking_data.items():
                         for rank_position, (video_id, count) in enumerate(rankings, 1):
@@ -116,21 +116,29 @@ class BatchProcessor:
                             
                             # バッチサイズに達したら一括挿入
                             if len(batch_data) >= batch_size:
-                                cur.executemany("""
-                                    INSERT INTO rankings_temp (
-                                        unique_video_id,
-                                        platform,
-                                        rank_position,
-                                        period_type,
-                                        count,
-                                        title,
-                                        thumbnail_url,
-                                        author_name
-                                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                                """, batch_data)
-                                total_inserted += len(batch_data)
-                                logging.info(f"Inserted batch of {len(batch_data)} items, total: {total_inserted}")
-                                batch_data = []
+                                try:
+                                    cur.executemany("""
+                                        INSERT INTO rankings_temp (
+                                            unique_video_id,
+                                            platform,
+                                            rank_position,
+                                            period_type,
+                                            count,
+                                            title,
+                                            thumbnail_url,
+                                            author_name
+                                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                    """, batch_data)
+                                    total_inserted += len(batch_data)
+                                    logging.info(f"Inserted batch of {len(batch_data)} items, total: {total_inserted}")
+                                    batch_data = []
+                                    
+                                    # 短時間の処理間隔を設けてタイムアウト回避
+                                    import time
+                                    time.sleep(0.1)
+                                except Exception as batch_error:
+                                    logging.error(f"Batch insert error: {batch_error}")
+                                    raise
                     
                     # 残りのデータを挿入
                     if batch_data:
@@ -168,10 +176,11 @@ class BatchProcessor:
         except Exception as e:
             logging.error(f"Error updating rankings table atomically: {e}")
             try:
-                conn.rollback()
-                logging.info("Transaction rolled back")
-            except:
-                pass
+                if 'conn' in locals() and conn:
+                    conn.rollback()
+                    logging.info("Transaction rolled back")
+            except Exception as rollback_error:
+                logging.error(f"Error during rollback: {rollback_error}")
             return False
     
     def get_ranking_stats(self) -> Dict:
