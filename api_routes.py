@@ -1,13 +1,59 @@
 import os
 import logging
+import psycopg2
+from functools import wraps
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify
 from metadata_extractor import MetadataExtractor
+from recipe_extractor import RecipeExtractor
 
 # Create blueprint for API routes
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 # Initialize metadata extractor
 extractor = MetadataExtractor()
+
+# Initialize recipe extractor
+recipe_extractor = RecipeExtractor()
+
+# Get API keys from environment
+APP_API_KEY = os.getenv('APP_API_KEY')
+INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY')
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+def require_api_key(key_type='app'):
+    """APIキー認証デコレーター"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            api_key = request.headers.get('X-API-Key')
+            
+            if key_type == 'app':
+                expected_key = APP_API_KEY
+                key_name = 'APP_API_KEY'
+            elif key_type == 'internal':
+                expected_key = INTERNAL_API_KEY
+                key_name = 'INTERNAL_API_KEY'
+            else:
+                return jsonify({'error': 'Invalid key type'}), 500
+            
+            if not expected_key:
+                logging.error(f"{key_name} is not set in environment")
+                return jsonify({'error': 'Server configuration error'}), 500
+            
+            if not api_key:
+                return jsonify({'error': 'API key is required'}), 401
+            
+            if api_key != expected_key:
+                return jsonify({'error': 'Invalid API key'}), 403
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+def get_db_connection():
+    """データベース接続を取得"""
+    return psycopg2.connect(DATABASE_URL)
 
 @api_bp.route('/v2/get-metadata', methods=['POST'])
 def get_metadata_v2():
@@ -508,3 +554,222 @@ def health_check():
         "status": "healthy",
         "message": "SNS Metadata Extractor API is running"
     }), 200
+
+@api_bp.route('/extract-recipe', methods=['POST'])
+@require_api_key('app')
+def extract_recipe():
+    """
+    動画URLからレシピを抽出
+    
+    Request headers:
+    {
+        "X-API-Key": "your-app-api-key"
+    }
+    
+    Request body:
+    {
+        "video_url": "https://www.youtube.com/watch?v=...",
+        "user_id": "uuid-string"
+    }
+    
+    Response:
+    {
+        "success": true,
+        "recipe_text": "レシピテキスト...",
+        "extraction_method": "description|comment|ai_video",
+        "cached": false,
+        "cost_usd": 0.00123
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        # バリデーション
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+        
+        if 'video_url' not in data:
+            return jsonify({'error': 'Missing video_url field'}), 400
+        
+        if 'user_id' not in data:
+            return jsonify({'error': 'Missing user_id field'}), 400
+        
+        video_url = data['video_url'].strip()
+        user_id = data['user_id'].strip()
+        
+        if not video_url:
+            return jsonify({'error': 'video_url cannot be empty'}), 400
+        
+        if not user_id:
+            return jsonify({'error': 'user_id cannot be empty'}), 400
+        
+        logging.info(f"Recipe extraction request - URL: {video_url}, User: {user_id}")
+        
+        # キャッシュチェック
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT recipe_id, extracted_text, extraction_method FROM extracted_recipes WHERE video_url = %s",
+                    (video_url,)
+                )
+                cached_result = cur.fetchone()
+                
+                if cached_result:
+                    recipe_id, recipe_text, extraction_method = cached_result
+                    logging.info(f"Cache hit for URL: {video_url}")
+                    
+                    # キャッシュヒットをログに記録
+                    cur.execute("""
+                        INSERT INTO recipe_extraction_logs 
+                        (user_id, video_url, status, recipe_id, calculated_cost_usd)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (user_id, video_url, 'CACHE_HIT', recipe_id, 0))
+                    conn.commit()
+                    
+                    return jsonify({
+                        'success': True,
+                        'recipe_text': recipe_text,
+                        'extraction_method': extraction_method,
+                        'cached': True,
+                        'cost_usd': 0.0
+                    }), 200
+        
+        # キャッシュなし - 新規抽出
+        logging.info("No cache found, extracting recipe...")
+        
+        try:
+            result = recipe_extractor.extract_recipe(video_url)
+            
+            recipe_text = result['recipe_text']
+            extraction_method = result['extraction_method']
+            ai_model = result.get('ai_model')
+            tokens_used = result.get('tokens_used', 0)
+            
+            # コスト計算
+            cost_usd = 0.0
+            if ai_model and tokens_used > 0:
+                cost_usd = recipe_extractor.calculate_cost(ai_model, tokens_used)
+            
+            logging.info(f"Recipe extracted successfully - Method: {extraction_method}, Cost: ${cost_usd}")
+            
+            # データベースに保存
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    # extracted_recipesに保存
+                    cur.execute("""
+                        INSERT INTO extracted_recipes (video_url, extracted_text, extraction_method)
+                        VALUES (%s, %s, %s)
+                        RETURNING recipe_id
+                    """, (video_url, recipe_text, extraction_method))
+                    
+                    recipe_id = cur.fetchone()[0]
+                    
+                    # recipe_extraction_logsに保存
+                    cur.execute("""
+                        INSERT INTO recipe_extraction_logs 
+                        (user_id, video_url, status, ai_model, calculated_cost_usd, recipe_id)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (user_id, video_url, 'SUCCESS', ai_model, cost_usd, recipe_id))
+                    
+                    conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'recipe_text': recipe_text,
+                'extraction_method': extraction_method,
+                'cached': False,
+                'cost_usd': cost_usd
+            }), 200
+            
+        except ValueError as ve:
+            # レシピが見つからない、またはサポートされていないプラットフォーム
+            logging.warning(f"Recipe extraction failed: {ve}")
+            
+            # エラーログを記録
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO recipe_extraction_logs 
+                        (user_id, video_url, status, error_message, calculated_cost_usd)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (user_id, video_url, 'ERROR', str(ve), 0))
+                    conn.commit()
+            
+            return jsonify({
+                'success': False,
+                'error': str(ve)
+            }), 400
+        
+    except Exception as e:
+        logging.error(f"Unexpected error in recipe extraction: {e}")
+        
+        # エラーログを記録（可能なら）
+        try:
+            if 'user_id' in locals() and 'video_url' in locals():
+                with get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO recipe_extraction_logs 
+                            (user_id, video_url, status, error_message, calculated_cost_usd)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (user_id, video_url, 'ERROR', str(e), 0))
+                        conn.commit()
+        except:
+            pass
+        
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+@api_bp.route('/internal/metrics', methods=['GET'])
+@require_api_key('internal')
+def get_metrics():
+    """
+    AI利用コストのメトリクスを取得（Appsmith用）
+    
+    Request headers:
+    {
+        "X-API-Key": "your-internal-api-key"
+    }
+    
+    Response:
+    [
+        { "date": "2025-10-01", "total_cost": 15.72 },
+        { "date": "2025-10-02", "total_cost": 18.05 }
+    ]
+    """
+    try:
+        # 過去30日間のデータを取得
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        DATE(created_at) as date,
+                        SUM(calculated_cost_usd) as total_cost
+                    FROM recipe_extraction_logs
+                    WHERE created_at >= %s
+                    GROUP BY DATE(created_at)
+                    ORDER BY date ASC
+                """, (thirty_days_ago,))
+                
+                results = cur.fetchall()
+                
+                metrics = []
+                for row in results:
+                    date, total_cost = row
+                    metrics.append({
+                        'date': date.strftime('%Y-%m-%d'),
+                        'total_cost': float(total_cost) if total_cost else 0.0
+                    })
+                
+                logging.info(f"Returned {len(metrics)} days of metrics data")
+                return jsonify(metrics), 200
+        
+    except Exception as e:
+        logging.error(f"Error fetching metrics: {e}")
+        return jsonify({
+            'error': f'Internal server error: {str(e)}'
+        }), 500
