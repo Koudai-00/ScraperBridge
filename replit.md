@@ -1,8 +1,8 @@
-# SNS Metadata Extractor
+# SNS Metadata Extractor & Recipe Extraction System
 
 ## Overview
 
-This is a Flask-based web application that extracts metadata from social media URLs (YouTube, TikTok, Instagram). The system provides both a REST API endpoint and a web interface for testing. It fetches video titles, thumbnails, author names, and unique video IDs from supported platforms using various extraction methods including web scraping and API integrations.
+This is a Flask-based web application that extracts metadata from social media URLs (YouTube, TikTok, Instagram) and provides AI-powered recipe extraction from cooking videos. The system provides REST API endpoints for both metadata extraction and recipe extraction, with intelligent caching and cost tracking for AI usage.
 
 ## User Preferences
 
@@ -12,9 +12,13 @@ Preferred communication style: Simple, everyday language.
 
 ### Backend Architecture
 - **Framework**: Flask with Blueprint organization for modular routing
-- **API Design**: RESTful API with `/api/v2/get-metadata` endpoint accepting POST requests
+- **API Design**: RESTful API with multiple endpoints for metadata and recipe extraction
+  - `/api/v2/get-metadata`: Metadata extraction from social media URLs
+  - `/api/extract-recipe`: AI-powered recipe extraction from cooking videos
+  - `/api/internal/metrics`: Cost tracking and analytics for Appsmith dashboard
 - **Request/Response Format**: JSON-based communication with structured error handling
 - **Metadata Extraction**: Centralized `MetadataExtractor` class that handles platform detection and data extraction
+- **Recipe Extraction**: `RecipeExtractor` class with multi-tier extraction strategy (description → comments → AI video analysis)
 - **Platform Support**: YouTube, TikTok, and Instagram URL processing with platform-specific extraction logic
 
 ### Frontend Architecture
@@ -35,13 +39,28 @@ Preferred communication style: Simple, everyday language.
 
 ### Security and CORS
 - **Cross-Origin Requests**: CORS enabled for all origins to support API access
+- **API Key Authentication**: Two-tier authentication system
+  - `APP_API_KEY`: Mobile app authentication for recipe extraction
+  - `INTERNAL_API_KEY`: Appsmith dashboard authentication for metrics access
 - **Environment Variables**: Sensitive configuration stored in environment variables
 - **Session Security**: Flask session management with configurable secret keys
+
+### Recipe Extraction System
+- **Multi-Tier Extraction Strategy**:
+  1. YouTube description analysis (fastest, no AI cost)
+  2. Creator comment extraction (fast, no AI cost)
+  3. Google Gemini AI video analysis (fallback, AI cost incurred)
+- **Intelligent Caching**: Video URL-based cache to avoid redundant AI processing
+- **Cost Tracking**: Comprehensive logging of AI usage and costs per user
+- **Database Tables**:
+  - `extracted_recipes`: Recipe cache with extraction method tracking
+  - `recipe_extraction_logs`: Detailed logs for AI cost analysis and user activity
 
 ## External Dependencies
 
 ### APIs and Services
-- **YouTube Data API**: For extracting YouTube video metadata using `YOUTUBE_API_KEY`
+- **YouTube Data API**: For extracting YouTube video metadata, descriptions, and comments using `YOUTUBE_API_KEY`
+- **Google Gemini API**: AI-powered video analysis for recipe extraction using `GEMINI_API_KEY`
 - **ScrapingBee API**: Web scraping service for platforms without direct API access using `SCRAPINGBEE_API_KEY`
 - **Supabase**: Database service integration with `SUPABASE_URL` and `SUPABASE_ANON_KEY` for potential data storage
 
@@ -51,6 +70,8 @@ Preferred communication style: Simple, everyday language.
 - **Requests**: HTTP client for external API calls and web scraping
 - **BeautifulSoup4**: HTML parsing for metadata extraction
 - **urllib.parse**: URL parsing and manipulation utilities
+- **google-generativeai**: Google Gemini API client for AI-powered video analysis
+- **psycopg2-binary**: PostgreSQL database adapter for recipe caching and logging
 
 ### Frontend Dependencies
 - **Bootstrap**: CSS framework with dark theme from Replit CDN
@@ -60,3 +81,14 @@ Preferred communication style: Simple, everyday language.
 ### Development Tools
 - **Python Logging**: Built-in logging for debugging and monitoring
 - **Environment Configuration**: Support for development and production environment variables
+
+## Recent Changes (October 2025)
+
+### Recipe Extraction Feature
+- **New Module**: `recipe_extractor.py` - Handles intelligent recipe extraction from cooking videos
+- **New Endpoints**: 
+  - `POST /api/extract-recipe` - Extract recipes from video URLs with caching
+  - `GET /api/internal/metrics` - Retrieve AI usage costs for analytics
+- **Database Schema**: Added `extracted_recipes` and `recipe_extraction_logs` tables
+- **AI Integration**: Google Gemini 2.0 Flash Experimental for video analysis
+- **Cost Optimization**: Multi-tier extraction strategy minimizes AI costs by checking descriptions and comments first

@@ -13,15 +13,23 @@ class RecipeExtractor:
     def __init__(self):
         self.youtube_api_key = os.getenv("YOUTUBE_API_KEY")
         self.gemini_api_key = os.getenv("GEMINI_API_KEY")
+        self._gemini_initialized = False
         
-        if not self.gemini_api_key:
-            raise ValueError("GEMINI_API_KEY environment variable not set")
-        
-        genai.configure(api_key=self.gemini_api_key)
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
+    
+    def _ensure_gemini_initialized(self):
+        """Gemini APIを遅延初期化"""
+        if not self._gemini_initialized:
+            if not self.gemini_api_key:
+                raise ValueError(
+                    "GEMINI_API_KEY is required for AI video analysis. "
+                    "Please set GEMINI_API_KEY environment variable."
+                )
+            genai.configure(api_key=self.gemini_api_key)
+            self._gemini_initialized = True
     
     def extract_recipe(self, video_url: str) -> Dict[str, Any]:
         """
@@ -248,6 +256,9 @@ class RecipeExtractor:
     def _extract_recipe_with_gemini(self, video_url: str) -> Dict[str, Any]:
         """Gemini APIを使って動画からレシピを抽出"""
         try:
+            # Gemini APIを初期化（必要な時のみ）
+            self._ensure_gemini_initialized()
+            
             model = genai.GenerativeModel('gemini-2.0-flash-exp')
             
             prompt = """
