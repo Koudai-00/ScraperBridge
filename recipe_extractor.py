@@ -102,11 +102,59 @@ class RecipeExtractor:
         logging.info("Extracting recipe from video using Gemini AI...")
         return self._extract_recipe_with_gemini(video_url)
     
+    def extract_unique_video_id(self, url: str) -> tuple:
+        """
+        URLからプラットフォームとユニーク動画IDを抽出
+        
+        Returns:
+            (platform, unique_video_id): タプル
+        """
+        platform = self._detect_platform(url)
+        
+        if platform == "youtube":
+            video_id = self._extract_youtube_id(url)
+            return (platform, video_id)
+        elif platform == "tiktok":
+            video_id = self._extract_tiktok_id(url)
+            return (platform, video_id)
+        elif platform == "instagram":
+            video_id = self._extract_instagram_id(url)
+            return (platform, video_id)
+        else:
+            return (platform, "")
+    
     def _extract_youtube_id(self, url: str) -> str:
         """YouTube動画IDを抽出"""
         patterns = [
             r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
             r'youtu\.be\/([0-9A-Za-z_-]{11}).*'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        return ""
+    
+    def _extract_tiktok_id(self, url: str) -> str:
+        """TikTok動画IDを抽出"""
+        patterns = [
+            r'/video/(\d+)',
+            r'/v/(\d+)'
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        return ""
+    
+    def _extract_instagram_id(self, url: str) -> str:
+        """Instagram動画IDを抽出"""
+        patterns = [
+            r'/reel/([A-Za-z0-9_-]+)',
+            r'/p/([A-Za-z0-9_-]+)',
+            r'/tv/([A-Za-z0-9_-]+)'
         ]
         
         for pattern in patterns:
