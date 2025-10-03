@@ -361,6 +361,20 @@ class RecipeExtractor:
         
         return has_ingredients and has_steps
     
+    def _normalize_youtube_url(self, video_url: str) -> str:
+        """
+        YouTube URLを標準形式（watch形式）に変換
+        ShortsやEmbed形式を標準のwatch形式に統一
+        """
+        video_id = self._extract_youtube_id(video_url)
+        if not video_id:
+            return video_url  # IDが抽出できない場合は元のURLを返す
+        
+        # 標準的なwatch形式に変換
+        normalized_url = f"https://www.youtube.com/watch?v={video_id}"
+        logging.info(f"Normalized URL: {video_url} -> {normalized_url}")
+        return normalized_url
+    
     def _extract_recipe_with_gemini(self, video_url: str) -> Dict[str, Any]:
         """Gemini APIを使って動画からレシピを抽出"""
         try:
@@ -398,9 +412,10 @@ class RecipeExtractor:
 - 動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください
 """
             
-            # YouTube URLを直接渡してGeminiに解析させる
-            logging.info(f"Sending video to Gemini: {video_url}")
-            response = model.generate_content([video_url, prompt])
+            # YouTube URLを標準形式に変換してからGeminiに送信
+            normalized_url = self._normalize_youtube_url(video_url)
+            logging.info(f"Sending video to Gemini: {normalized_url}")
+            response = model.generate_content([normalized_url, prompt])
             
             raw_text = response.text.strip()
             logging.debug(f"Gemini raw response: {raw_text[:200]}...")

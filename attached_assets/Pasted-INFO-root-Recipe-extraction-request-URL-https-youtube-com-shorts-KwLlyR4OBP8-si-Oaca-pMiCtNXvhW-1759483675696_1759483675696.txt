@@ -1,0 +1,32 @@
+INFO:root:Recipe extraction request - URL: https://youtube.com/shorts/KwLlyR4OBP8?si=Oaca_pMiCtNXvhWP, User: 3bb081e8-8c8f-4e82-b1af-106684a57313
+INFO:root:Extracted - Platform: youtube, Video ID: KwLlyR4OBP8
+INFO:root:No cache found, extracting recipe...
+INFO:root:Checking YouTube description for recipe...
+DEBUG:urllib3.connectionpool:Starting new HTTPS connection (1): www.googleapis.com:443
+DEBUG:urllib3.connectionpool:https://www.googleapis.com:443 "GET /youtube/v3/videos?part=snippet&id=KwLlyR4OBP8&key=AIzaSyDckM6GXtqf2aVOXFFhuPTwD6paqlDlurA HTTP/1.1" 200 None
+INFO:root:Checking YouTube comments for recipe...
+DEBUG:urllib3.connectionpool:https://www.googleapis.com:443 "GET /youtube/v3/videos?part=snippet&id=KwLlyR4OBP8&key=AIzaSyDckM6GXtqf2aVOXFFhuPTwD6paqlDlurA HTTP/1.1" 200 None
+DEBUG:urllib3.connectionpool:https://www.googleapis.com:443 "GET /youtube/v3/commentThreads?part=snippet&videoId=KwLlyR4OBP8&maxResults=100&order=relevance&key=AIzaSyDckM6GXtqf2aVOXFFhuPTwD6paqlDlurA HTTP/1.1" 403 None
+ERROR:root:Error fetching YouTube comments: 403 Client Error: Forbidden for url: https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=KwLlyR4OBP8&maxResults=100&order=relevance&key=AIzaSyDckM6GXtqf2aVOXFFhuPTwD6paqlDlurA
+INFO:root:Extracting recipe from video using Gemini AI...
+INFO:root:Sending video to Gemini: https://youtube.com/shorts/KwLlyR4OBP8?si=Oaca_pMiCtNXvhWP
+DEBUG:root:Gemini raw response: ```json
+{
+  "dish_name": "卵かけご飯アヒージョ",
+  "ingredients": [
+    "卵: 1個",
+    "オリーブオイル: 適量",
+    "ニンニク: 1かけ",
+    "鷹の爪: 1本",
+    "塩: 少々",
+    "黒胡椒: 少々",
+    "醤油: 適量",
+    "ご飯: 適量"
+  ],
+  "steps": [
+    "...
+INFO:root:Successfully parsed JSON response from Gemini
+INFO:root:Recipe extracted successfully - Method: ai_video, Cost: $0.0
+^C[2025-10-03 09:25:34 +0000] [3255] [INFO] Handling signal: int
+[2025-10-03 09:25:34 +0000] [3266] [INFO] Worker exiting (pid: 3266)
+[2025-10-03 09:25:36 +0000] [3255] [INFO] Shutting down: Master
