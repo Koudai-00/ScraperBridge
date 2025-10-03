@@ -89,6 +89,16 @@ Preferred communication style: Simple, everyday language.
 - **New Endpoints**: 
   - `POST /api/extract-recipe` - Extract recipes from video URLs with caching
   - `GET /api/internal/metrics` - Retrieve AI usage costs for analytics
-- **Database Schema**: Added `extracted_recipes` and `recipe_extraction_logs` tables
+- **Database Schema**: 
+  - `extracted_recipes`: Changed from URL-based to `(platform, unique_video_id)` caching
+  - `recipe_extraction_logs`: Updated to track platform and unique_video_id
+  - Unique index on `(platform, unique_video_id)` prevents duplicate entries
 - **AI Integration**: Google Gemini 2.0 Flash Experimental for video analysis
 - **Cost Optimization**: Multi-tier extraction strategy minimizes AI costs by checking descriptions and comments first
+
+### Recipe Quality Improvements (October 3, 2025)
+- **JSON-based Gemini Responses**: Prompts Gemini to return structured JSON format for reliable parsing
+- **Post-processing Cleaning**: Removes unwanted prefix text ("はい、動画を拝見しました" etc.)
+- **Required Section Validation**: Verifies recipes contain both ingredients and cooking steps
+- **Fallback Handling**: If JSON parsing fails, falls back to text cleaning for maximum reliability
+- **Platform-agnostic Caching**: Uses unique video IDs instead of full URLs to handle URL variations

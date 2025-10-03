@@ -2,6 +2,7 @@ import os
 import logging
 import re
 import time
+import json
 import requests
 from typing import Optional, Dict, Any
 import google.generativeai as genai
@@ -301,6 +302,65 @@ class RecipeExtractor:
             text = text[:2000] + "..."
         return text
     
+    def _clean_recipe_text(self, text: str) -> str:
+        """
+        AIからの応答をクリーニングして不要な前置きを削除
+        """
+        # 不要な前置き文言を削除
+        unwanted_prefixes = [
+            r'^はい、.*?。\s*',
+            r'^はい。\s*',
+            r'^動画を拝見しました。?\s*',
+            r'^以下に.*?します。?\s*',
+            r'^レシピをテキスト化します。?\s*',
+            r'^こちらがレシピです。?\s*'
+        ]
+        
+        cleaned = text
+        for pattern in unwanted_prefixes:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
+        return cleaned.strip()
+    
+    def _convert_json_to_text(self, recipe_json: Dict[str, Any]) -> str:
+        """
+        JSON形式のレシピをテキスト形式に変換
+        """
+        parts = []
+        
+        # 料理名
+        if recipe_json.get('dish_name'):
+            parts.append(f"【料理名】\n{recipe_json['dish_name']}")
+        
+        # 材料
+        if recipe_json.get('ingredients'):
+            parts.append("\n【材料】")
+            for ingredient in recipe_json['ingredients']:
+                parts.append(f"- {ingredient}")
+        
+        # 作り方
+        if recipe_json.get('steps'):
+            parts.append("\n【作り方】")
+            for i, step in enumerate(recipe_json['steps'], 1):
+                parts.append(f"{i}. {step}")
+        
+        # コツ・ポイント
+        if recipe_json.get('tips'):
+            parts.append("\n【コツ・ポイント】")
+            for tip in recipe_json['tips']:
+                parts.append(f"- {tip}")
+        
+        return '\n'.join(parts)
+    
+    def _validate_recipe_structure(self, recipe_text: str) -> bool:
+        """
+        レシピに必須セクション（材料・作り方）が含まれているか検証
+        """
+        has_ingredients = any(keyword in recipe_text for keyword in ['【材料】', '材料', 'Ingredients'])
+        has_steps = any(keyword in recipe_text for keyword in ['【作り方】', '作り方', 'Steps', '手順'])
+        
+        return has_ingredients and has_steps
+    
     def _extract_recipe_with_gemini(self, video_url: str) -> Dict[str, Any]:
         """Gemini APIを使って動画からレシピを抽出"""
         try:
@@ -310,41 +370,77 @@ class RecipeExtractor:
             model = genai.GenerativeModel('gemini-2.0-flash-exp')
             
             prompt = """
-この動画からレシピを抽出してテキスト化してください。
+この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。
+前置きや説明文は一切不要です。JSON形式のみを返してください。
 
-以下の形式で出力してください：
+{
+  "dish_name": "料理の名前",
+  "ingredients": [
+    "材料1: 分量",
+    "材料2: 分量"
+  ],
+  "steps": [
+    "手順1の詳細な説明",
+    "手順2の詳細な説明",
+    "手順3の詳細な説明"
+  ],
+  "tips": [
+    "コツやポイント1",
+    "コツやポイント2"
+  ]
+}
 
-【料理名】
-料理の名前
-
-【材料】
-- 材料1: 分量
-- 材料2: 分量
-（すべての材料をリストアップ）
-
-【作り方】
-1. 手順1
-2. 手順2
-（すべての手順を順番に）
-
-【コツ・ポイント】
-- ポイント1
-- ポイント2
-（あれば記載）
-
-レシピが複数ある場合は、それぞれ分けて記載してください。
-動画にレシピが含まれていない場合は「レシピが見つかりませんでした」と返してください。
+重要な注意事項：
+- 必ず上記のJSON形式で出力してください
+- 前置き文言（「はい」「動画を拝見しました」等）は絶対に含めないでください
+- 作り方（steps）は必須です。必ず詳細な手順を抽出してください
+- コツ・ポイント（tips）がない場合は空配列[]にしてください
+- 動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください
 """
             
             # YouTube URLを直接渡してGeminiに解析させる
             logging.info(f"Sending video to Gemini: {video_url}")
             response = model.generate_content([video_url, prompt])
             
-            recipe_text = response.text.strip()
+            raw_text = response.text.strip()
+            logging.debug(f"Gemini raw response: {raw_text[:200]}...")
+            
+            # JSON形式のパース試行
+            recipe_text = None
+            try:
+                # JSONコードブロックを除去（```json ... ```）
+                json_text = re.sub(r'^```json\s*', '', raw_text)
+                json_text = re.sub(r'\s*```$', '', json_text)
+                json_text = json_text.strip()
+                
+                recipe_json = json.loads(json_text)
+                
+                # エラーチェック
+                if recipe_json.get('error'):
+                    raise ValueError("No recipe found in the video")
+                
+                # 必須フィールドの検証
+                if not recipe_json.get('ingredients') or not recipe_json.get('steps'):
+                    logging.warning("Recipe missing required fields, falling back to text cleaning")
+                    raise json.JSONDecodeError("Missing required fields", json_text, 0)
+                
+                # JSON → テキスト形式に変換
+                recipe_text = self._convert_json_to_text(recipe_json)
+                logging.info("Successfully parsed JSON response from Gemini")
+                
+            except json.JSONDecodeError as je:
+                # JSONパース失敗 - テキスト形式として処理
+                logging.warning(f"Failed to parse JSON response: {je}, using text fallback")
+                recipe_text = self._clean_recipe_text(raw_text)
             
             # レシピが見つからなかった場合
             if "レシピが見つかりませんでした" in recipe_text or "レシピが含まれていない" in recipe_text:
                 raise ValueError("No recipe found in the video")
+            
+            # 必須セクションの検証
+            if not self._validate_recipe_structure(recipe_text):
+                logging.warning("Recipe missing required sections (ingredients or steps)")
+                raise ValueError("Incomplete recipe: missing ingredients or cooking steps")
             
             # トークン使用量を取得（概算）
             tokens_used = self._estimate_tokens(response)
