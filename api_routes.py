@@ -606,25 +606,32 @@ def extract_recipe():
         logging.info(
             f"Recipe extraction request - URL: {video_url}, User: {user_id}")
 
-        # キャッシュチェック
+        # URLからプラットフォームとユニークIDを抽出
+        platform, unique_video_id = recipe_extractor.extract_unique_video_id(video_url)
+        if not unique_video_id:
+            return jsonify({'error': 'Could not extract video ID from URL'}), 400
+        
+        logging.info(f"Extracted - Platform: {platform}, Video ID: {unique_video_id}")
+
+        # キャッシュチェック（platform + unique_video_idで）
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT recipe_id, extracted_text, extraction_method FROM extracted_recipes WHERE video_url = %s",
-                    (video_url, ))
+                    "SELECT recipe_id, extracted_text, extraction_method FROM extracted_recipes WHERE platform = %s AND unique_video_id = %s",
+                    (platform, unique_video_id))
                 cached_result = cur.fetchone()
 
                 if cached_result:
                     recipe_id, recipe_text, extraction_method = cached_result
-                    logging.info(f"Cache hit for URL: {video_url}")
+                    logging.info(f"Cache hit for {platform}:{unique_video_id}")
 
                     # キャッシュヒットをログに記録
                     cur.execute(
                         """
                         INSERT INTO recipe_extraction_logs 
-                        (user_id, video_url, status, recipe_id, calculated_cost_usd)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (user_id, video_url, 'CACHE_HIT', recipe_id, 0))
+                        (user_id, platform, unique_video_id, status, recipe_id, calculated_cost_usd)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (user_id, platform, unique_video_id, 'CACHE_HIT', recipe_id, 0))
                     conn.commit()
 
                     return jsonify({
@@ -662,10 +669,10 @@ def extract_recipe():
                     # extracted_recipesに保存
                     cur.execute(
                         """
-                        INSERT INTO extracted_recipes (video_url, extracted_text, extraction_method)
-                        VALUES (%s, %s, %s)
+                        INSERT INTO extracted_recipes (platform, unique_video_id, extracted_text, extraction_method)
+                        VALUES (%s, %s, %s, %s)
                         RETURNING recipe_id
-                    """, (video_url, recipe_text, extraction_method))
+                    """, (platform, unique_video_id, recipe_text, extraction_method))
 
                     recipe_id = cur.fetchone()[0]
 
@@ -673,9 +680,9 @@ def extract_recipe():
                     cur.execute(
                         """
                         INSERT INTO recipe_extraction_logs 
-                        (user_id, video_url, status, ai_model, calculated_cost_usd, recipe_id)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, (user_id, video_url, 'SUCCESS', ai_model, cost_usd,
+                        (user_id, platform, unique_video_id, status, ai_model, calculated_cost_usd, recipe_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (user_id, platform, unique_video_id, 'SUCCESS', ai_model, cost_usd,
                           recipe_id))
 
                     conn.commit()
@@ -698,9 +705,9 @@ def extract_recipe():
                     cur.execute(
                         """
                         INSERT INTO recipe_extraction_logs 
-                        (user_id, video_url, status, error_message, calculated_cost_usd)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (user_id, video_url, 'ERROR', str(ve), 0))
+                        (user_id, platform, unique_video_id, status, error_message, calculated_cost_usd)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (user_id, platform, unique_video_id, 'ERROR', str(ve), 0))
                     conn.commit()
 
             return jsonify({'success': False, 'error': str(ve)}), 400
@@ -710,15 +717,15 @@ def extract_recipe():
 
         # エラーログを記録（可能なら）
         try:
-            if 'user_id' in locals() and 'video_url' in locals():
+            if 'user_id' in locals() and 'platform' in locals() and 'unique_video_id' in locals():
                 with get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
                             INSERT INTO recipe_extraction_logs 
-                            (user_id, video_url, status, error_message, calculated_cost_usd)
-                            VALUES (%s, %s, %s, %s, %s)
-                        """, (user_id, video_url, 'ERROR', str(e), 0))
+                            (user_id, platform, unique_video_id, status, error_message, calculated_cost_usd)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """, (user_id, platform, unique_video_id, 'ERROR', str(e), 0))
                         conn.commit()
         except:
             pass
