@@ -674,7 +674,10 @@ def extract_recipe():
                         RETURNING recipe_id
                     """, (platform, unique_video_id, recipe_text, extraction_method))
 
-                    recipe_id = cur.fetchone()[0]
+                    result = cur.fetchone()
+                    if not result:
+                        raise ValueError("Failed to save recipe to database")
+                    recipe_id = result[0]
 
                     # recipe_extraction_logsに保存
                     cur.execute(
