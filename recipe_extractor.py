@@ -131,10 +131,24 @@ class RecipeExtractor:
 
     def _extract_tiktok_id(self, url: str) -> str:
         """TikTok動画IDを抽出"""
+        # 通常のURL形式
         patterns = [r'/video/(\d+)', r'/v/(\d+)']
         for pattern in patterns:
             match = re.search(pattern, url)
             if match: return match.group(1)
+        
+        # 短縮URL形式 (vt.tiktok.com/XXXXXX)
+        short_url_pattern = r'vt\.tiktok\.com/([A-Za-z0-9]+)'
+        match = re.search(short_url_pattern, url)
+        if match:
+            return match.group(1)
+        
+        # vm.tiktok.com形式も対応
+        vm_pattern = r'vm\.tiktok\.com/([A-Za-z0-9]+)'
+        match = re.search(vm_pattern, url)
+        if match:
+            return match.group(1)
+        
         return ""
 
     def _extract_instagram_id(self, url: str) -> str:
