@@ -309,46 +309,53 @@ class RecipeExtractor:
             return None
         
         try:
-            # プラットフォームに応じたApify Actorを選択
+            # プラットフォームに応じたApify Actorとパラメータを設定
             if platform == 'tiktok':
                 actor_id = 'clockworks/free-tiktok-scraper'
+                payload = {'postURLs': [video_url]}
             elif platform == 'instagram':
                 actor_id = 'apify/instagram-scraper'
+                payload = {'directUrls': [video_url]}
             else:
                 logging.error(f"Unsupported platform for Apify: {platform}")
                 return None
             
-            # Apify APIエンドポイント
-            api_url = f"https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items"
+            # Apify APIエンドポイント（トークンをクエリパラメータで渡す）
+            api_url = f"https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items?token={self.apify_api_token}"
             
             headers = {
-                'Authorization': f'Bearer {self.apify_api_token}',
                 'Content-Type': 'application/json'
             }
             
-            # リクエストボディ
-            payload = {
-                'postURLs': [video_url]
-            }
-            
             logging.info(f"Requesting video download URL from Apify for {platform}...")
-            response = requests.post(api_url, headers=headers, json=payload, timeout=60)
+            logging.debug(f"Apify request payload: {payload}")
+            
+            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
             response.raise_for_status()
             
             data = response.json()
+            logging.debug(f"Apify response data: {data}")
             
             # レスポンスから動画URLを抽出
             if data and len(data) > 0:
                 item = data[0]
                 
                 if platform == 'tiktok':
-                    download_url = item.get('videoUrl') or item.get('video', {}).get('downloadAddr')
+                    # TikTokの場合、複数の可能性のあるフィールドをチェック
+                    download_url = (item.get('videoUrl') or 
+                                  item.get('video', {}).get('downloadAddr') or
+                                  item.get('video', {}).get('playAddr'))
                 elif platform == 'instagram':
-                    download_url = item.get('videoUrl') or item.get('displayUrl')
+                    # Instagramの場合
+                    download_url = (item.get('videoUrl') or 
+                                  item.get('displayUrl') or
+                                  item.get('url'))
                 
                 if download_url:
                     logging.info(f"Successfully got download URL from Apify: {download_url[:100]}...")
                     return download_url
+                else:
+                    logging.warning(f"No download URL found in Apify response. Item keys: {list(item.keys())}")
             
             logging.warning(f"Could not extract download URL from Apify response for {platform}")
             return None
