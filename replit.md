@@ -61,6 +61,9 @@ Preferred communication style: Simple, everyday language.
 ### APIs and Services
 - **YouTube Data API**: For extracting YouTube video metadata, descriptions, and comments using `YOUTUBE_API_KEY`
 - **Google Gemini API**: AI-powered video analysis for recipe extraction using `GEMINI_API_KEY`
+- **Apify API**: Video download URL extraction for TikTok and Instagram using `APIFY_API_TOKEN`
+  - TikTok: Uses `clockworks/free-tiktok-scraper` actor
+  - Instagram: Uses `apify/instagram-scraper` actor
 - **ScrapingBee API**: Web scraping service for platforms without direct API access using `SCRAPINGBEE_API_KEY`
 - **Supabase**: Database service integration with `SUPABASE_URL` and `SUPABASE_ANON_KEY` for potential data storage
 
@@ -102,3 +105,21 @@ Preferred communication style: Simple, everyday language.
 - **Required Section Validation**: Verifies recipes contain both ingredients and cooking steps
 - **Fallback Handling**: If JSON parsing fails, falls back to text cleaning for maximum reliability
 - **Platform-agnostic Caching**: Uses unique video IDs instead of full URLs to handle URL variations
+
+### Apify Integration for TikTok/Instagram (October 5, 2025)
+- **Apify API Integration**: TikTok and Instagram video downloads now use Apify API instead of direct yt-dlp
+- **Improved Reliability**: Apify provides stable video download URLs where direct downloads were failing
+- **Processing Flow**: 
+  1. Detect platform (TikTok/Instagram)
+  2. Call Apify API to get video download URL
+  3. Download video using yt-dlp from Apify URL
+  4. Upload to Gemini for recipe extraction (same as YouTube)
+- **Actor Configuration**:
+  - TikTok: `clockworks/free-tiktok-scraper`
+  - Instagram: `apify/instagram-scraper`
+
+### Description Refinement with Gemini (October 5, 2025)
+- **New Method**: `_refine_recipe_with_gemini` - Cleans YouTube description text using Gemini
+- **Processing Strategy**: When recipe detected in description, send full text to Gemini to remove promotional content
+- **Content Preservation**: Recipe content (ingredients, amounts, steps) preserved exactly, only removes extra text
+- **Fallback**: If Gemini refinement fails, uses traditional regex-based extraction
