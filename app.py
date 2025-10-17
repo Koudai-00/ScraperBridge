@@ -11,7 +11,11 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key")
 
 # Enable CORS for API endpoints
-CORS(app, origins="*", allow_headers=["*"], methods=["*"])
+CORS(app, 
+     resources={r"/api/*": {"origins": "*"}},
+     allow_headers=["Content-Type", "X-API-Key", "Authorization"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     supports_credentials=True)
 
 # Initialize and start ranking scheduler
 try:
