@@ -96,6 +96,10 @@ class MetadataExtractor:
         
         return ""
     
+    def _generate_youtube_embed_code(self, video_id: str) -> str:
+        """Generate YouTube embed code"""
+        return f'''<iframe width="560" height="315" src="https://www.youtube.com/embed/{video_id}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>'''
+    
     def _get_youtube_api_metadata(self, video_id: str) -> dict:
         """Get YouTube metadata using YouTube Data API"""
         api_url = "https://www.googleapis.com/youtube/v3/videos"
@@ -120,7 +124,8 @@ class MetadataExtractor:
             "unique_video_id": video_id,
             "title": snippet.get('title'),
             "thumbnailUrl": snippet.get('thumbnails', {}).get('high', {}).get('url'),
-            "authorName": snippet.get('channelTitle')
+            "authorName": snippet.get('channelTitle'),
+            "embedCode": self._generate_youtube_embed_code(video_id)
         }
     
     def _scrape_youtube_metadata(self, url: str, video_id: str) -> dict:
@@ -164,7 +169,8 @@ class MetadataExtractor:
             "unique_video_id": video_id,
             "title": title,
             "thumbnailUrl": thumbnail_url,
-            "authorName": author_name
+            "authorName": author_name,
+            "embedCode": self._generate_youtube_embed_code(video_id)
         }
     
     def _extract_tiktok_metadata(self, url: str) -> dict:
@@ -266,6 +272,23 @@ class MetadataExtractor:
         match = re.search(r'\/video\/(\d+)', clean_url)
         return match.group(1) if match else ""
     
+    def _get_tiktok_embed_code(self, url: str) -> str:
+        """Get TikTok embed code from oEmbed API"""
+        try:
+            clean_url = url.split('?')[0]
+            oembed_url = f"https://www.tiktok.com/oembed?url={clean_url}"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            }
+            response = self.session.get(oembed_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            return data.get('html', '')
+        except Exception as e:
+            logging.warning(f"Failed to get TikTok embed code: {e}")
+            return ''
+    
     def _get_tiktok_supabase_metadata(self, url: str, video_id: str) -> dict:
         """Get TikTok metadata using Supabase function"""
         supabase_function_url = f"{self.supabase_url}/functions/v1/video-metadata"
@@ -277,12 +300,16 @@ class MetadataExtractor:
         
         data = response.json()
         
+        # Get embed code from oEmbed API
+        embed_code = self._get_tiktok_embed_code(url)
+        
         return {
             "platform": "tiktok",
             "unique_video_id": video_id,
             "title": data.get("title"),
             "thumbnailUrl": data.get("thumbnailUrl"),
-            "authorName": data.get("authorName")
+            "authorName": data.get("authorName"),
+            "embedCode": embed_code
         }
     
     def _scrape_tiktok_metadata(self, url: str, video_id: str) -> dict:
@@ -367,6 +394,7 @@ class MetadataExtractor:
                             title = json_data['title'].strip()
                             thumbnail_url = json_data.get('thumbnail_url')
                             author_name = json_data.get('author_name')
+                            embed_code = json_data.get('html', '')
                             
                             # Extract username from URL if not provided in oEmbed response
                             if not author_name:
@@ -382,7 +410,8 @@ class MetadataExtractor:
                                 "unique_video_id": video_id,
                                 "title": title,
                                 "thumbnailUrl": thumbnail_url,
-                                "authorName": author_name
+                                "authorName": author_name,
+                                "embedCode": embed_code
                             }
                         else:
                             logging.debug(f"TikTok oEmbed response missing title field: {json_data}")
@@ -568,12 +597,15 @@ class MetadataExtractor:
                 # If we found some meaningful metadata, return it
                 if title or thumbnail_url or (author_name and len(author_name) > 1):
                     logging.debug(f"Successfully extracted TikTok metadata using approach {i+1}")
+                    # Try to get embed code
+                    embed_code = self._get_tiktok_embed_code(url)
                     return {
                         "platform": "tiktok",
                         "unique_video_id": video_id,
                         "title": title,
                         "thumbnailUrl": thumbnail_url,
-                        "authorName": author_name
+                        "authorName": author_name,
+                        "embedCode": embed_code
                     }
                 
             except Exception as e:
@@ -590,12 +622,16 @@ class MetadataExtractor:
             if username_match:
                 author_name = f"@{username_match.group(1)}"
         
+        # Try to get embed code as last resort
+        embed_code = self._get_tiktok_embed_code(url)
+        
         return {
             "platform": "tiktok",
             "unique_video_id": video_id,
             "title": None,
             "thumbnailUrl": None,
-            "authorName": author_name
+            "authorName": author_name,
+            "embedCode": embed_code
         }
     
     def _extract_instagram_metadata(self, url: str) -> dict:
@@ -615,6 +651,23 @@ class MetadataExtractor:
         clean_url = url.split('?')[0]
         match = re.search(r'\/(p|reel)\/([A-Za-z0-9-_]+)', clean_url)
         return match.group(2) if match else ""
+    
+    def _get_instagram_embed_code(self, url: str) -> str:
+        """Get Instagram embed code from oEmbed API"""
+        try:
+            clean_url = url.split('?')[0]
+            oembed_url = f"https://graph.facebook.com/v17.0/instagram_oembed?url={clean_url}&access_token=&omitscript=true"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json'
+            }
+            response = self.session.get(oembed_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            return data.get('html', '')
+        except Exception as e:
+            logging.warning(f"Failed to get Instagram embed code: {e}")
+            return ''
     
     def _scrape_instagram_metadata(self, url: str, post_id: str) -> dict:
         """Scrape Instagram metadata from web page"""
@@ -774,12 +827,16 @@ class MetadataExtractor:
                 # If we found some metadata, return it
                 if title or thumbnail_url or (author_name and author_name != username_match.group(1) if username_match else True):
                     logging.debug(f"Successfully extracted metadata using approach {i+1}")
+                    # Get embed code
+                    embed_code = self._get_instagram_embed_code(url)
+                    
                     return {
                         "platform": "instagram",
                         "unique_video_id": post_id,
                         "title": title,
                         "thumbnailUrl": thumbnail_url,
-                        "authorName": author_name
+                        "authorName": author_name,
+                        "embedCode": embed_code
                     }
                 
             except Exception as e:
@@ -794,12 +851,16 @@ class MetadataExtractor:
             if username_match:
                 author_name = username_match.group(1)
         
+        # Try to get embed code as last resort
+        embed_code = self._get_instagram_embed_code(url)
+        
         return {
             "platform": "instagram",
             "unique_video_id": post_id,
             "title": None,
             "thumbnailUrl": None,
-            "authorName": author_name
+            "authorName": author_name,
+            "embedCode": embed_code
         }
     
     def _clean_tiktok_title(self, content: str) -> str:
