@@ -655,16 +655,12 @@ class MetadataExtractor:
     def _get_instagram_embed_code(self, url: str) -> str:
         """Get Instagram embed code from oEmbed API"""
         try:
-            clean_url = url.split('?')[0]
-            oembed_url = f"https://graph.facebook.com/v17.0/instagram_oembed?url={clean_url}&access_token=&omitscript=true"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'application/json'
-            }
-            response = self.session.get(oembed_url, headers=headers, timeout=10)
+            # Instagram公式oEmbed API
+            oembed_url = f"https://www.instagram.com/oembed/?url={url}&omitscript=true"
+            response = self.session.get(oembed_url, timeout=10)
             response.raise_for_status()
-            data = response.json()
-            return data.get('html', '')
+            embed_data = response.json()
+            return embed_data.get('html', '')
         except Exception as e:
             logging.warning(f"Failed to get Instagram embed code: {e}")
             return ''
