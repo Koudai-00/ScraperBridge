@@ -652,17 +652,41 @@ class MetadataExtractor:
         match = re.search(r'\/(p|reel)\/([A-Za-z0-9-_]+)', clean_url)
         return match.group(2) if match else ""
     
-    def _get_instagram_embed_code(self, url: str) -> str:
-        """Get Instagram embed code from oEmbed API"""
+    def _get_instagram_embed_code(self, url: str, post_id: str) -> str:
+        """Generate Instagram embed code"""
         try:
-            # Instagram公式oEmbed API
-            oembed_url = f"https://www.instagram.com/oembed/?url={url}&omitscript=true"
-            response = self.session.get(oembed_url, timeout=10)
-            response.raise_for_status()
-            embed_data = response.json()
-            return embed_data.get('html', '')
+            # Instagram公式埋め込みコードを生成
+            # oEmbed APIはレート制限があるため、直接HTMLを生成
+            clean_url = url.split('?')[0]
+            
+            embed_html = f'''<blockquote class="instagram-media" data-instgrm-permalink="{clean_url}" data-instgrm-version="14" style="background:#FFF; border:0; border-radius:3px; box-shadow:0 0 1px 0 rgba(0,0,0,0.5),0 1px 10px 0 rgba(0,0,0,0.15); margin: 1px; max-width:540px; min-width:326px; padding:0; width:99.375%; width:-webkit-calc(100% - 2px); width:calc(100% - 2px);">
+<div style="padding:16px;">
+<a href="{clean_url}" style="background:#FFFFFF; line-height:0; padding:0 0; text-align:center; text-decoration:none; width:100%;" target="_blank">
+<div style="display: flex; flex-direction: row; align-items: center;">
+<div style="background-color: #F4F4F4; border-radius: 50%; flex-grow: 0; height: 40px; margin-right: 14px; width: 40px;"></div>
+<div style="display: flex; flex-direction: column; flex-grow: 1; justify-content: center;">
+<div style="background-color: #F4F4F4; border-radius: 4px; flex-grow: 0; height: 14px; margin-bottom: 6px; width: 100px;"></div>
+<div style="background-color: #F4F4F4; border-radius: 4px; flex-grow: 0; height: 14px; width: 60px;"></div>
+</div>
+</div>
+<div style="padding: 19% 0;"></div>
+<div style="display:block; height:50px; margin:0 auto 12px; width:50px;"></div>
+<div style="padding-top: 8px;">
+<div style="color:#3897f0; font-family:Arial,sans-serif; font-size:14px; font-style:normal; font-weight:550; line-height:18px;">View this post on Instagram</div>
+</div>
+<div style="padding: 12.5% 0;"></div>
+</a>
+<p style="color:#c9c8cd; font-family:Arial,sans-serif; font-size:14px; line-height:17px; margin-bottom:0; margin-top:8px; overflow:hidden; padding:8px 0 7px; text-align:center; text-overflow:ellipsis; white-space:nowrap;">
+<a href="{clean_url}" style="color:#c9c8cd; font-family:Arial,sans-serif; font-size:14px; font-style:normal; font-weight:normal; line-height:17px; text-decoration:none;" target="_blank">A post shared on Instagram</a>
+</p>
+</div>
+</blockquote>
+<script async src="//www.instagram.com/embed.js"></script>'''
+            
+            return embed_html
+            
         except Exception as e:
-            logging.warning(f"Failed to get Instagram embed code: {e}")
+            logging.warning(f"Failed to generate Instagram embed code: {e}")
             return ''
     
     def _scrape_instagram_metadata(self, url: str, post_id: str) -> dict:
@@ -824,7 +848,7 @@ class MetadataExtractor:
                 if title or thumbnail_url or (author_name and author_name != username_match.group(1) if username_match else True):
                     logging.debug(f"Successfully extracted metadata using approach {i+1}")
                     # Get embed code
-                    embed_code = self._get_instagram_embed_code(url)
+                    embed_code = self._get_instagram_embed_code(url, post_id)
                     
                     return {
                         "platform": "instagram",
@@ -848,7 +872,7 @@ class MetadataExtractor:
                 author_name = username_match.group(1)
         
         # Try to get embed code as last resort
-        embed_code = self._get_instagram_embed_code(url)
+        embed_code = self._get_instagram_embed_code(url, post_id)
         
         return {
             "platform": "instagram",
