@@ -123,3 +123,18 @@ Preferred communication style: Simple, everyday language.
 - **Processing Strategy**: When recipe detected in description, send full text to Gemini to remove promotional content
 - **Content Preservation**: Recipe content (ingredients, amounts, steps) preserved exactly, only removes extra text
 - **Fallback**: If Gemini refinement fails, uses traditional regex-based extraction
+
+### Security Improvements (October 23, 2025)
+- **API Key Protection**: All API keys stored in environment variables only (never hardcoded)
+- **Git Ignore Configuration**: Added comprehensive `.gitignore` file to prevent accidental exposure of:
+  - Environment variables and secrets (.env files)
+  - Log files and debug output (Pasted-*.txt, *.log)
+  - Uploaded videos and temporary files
+  - Database files and IDE configurations
+- **Log File Cleanup**: Removed debug log files from `attached_assets/` that contained API keys in request URLs
+- **Environment Variable Usage**: All sensitive configuration uses `os.getenv()` pattern:
+  - `YOUTUBE_API_KEY`: YouTube Data API authentication
+  - `GEMINI_API_KEY`: Google Gemini AI authentication
+  - `APIFY_API_TOKEN`: Apify API authentication
+  - `SCRAPINGBEE_API_KEY`: ScrapingBee API authentication
+  - `SESSION_SECRET`: Flask session encryption key
