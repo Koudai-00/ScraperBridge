@@ -21,25 +21,29 @@ class MetadataUpdater:
         return psycopg2.connect(self.database_url)
     
     def get_metadata_from_videos_table(self, video_ids: List[str]) -> Dict[str, dict]:
-        """videosテーブルから既存メタデータを取得"""
+        """videosテーブルから既存メタデータを取得（url, embed_code含む）"""
         if not video_ids:
             return {}
         
         try:
             with self.get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    # IN句用のプレースホルダーを作成
+                    # 各unique_video_idで最新のレコード（created_atが最大）を取得
+                    # url, embed_codeも含めて取得
                     placeholders = ','.join(['%s'] * len(video_ids))
                     query = f"""
-                    SELECT 
+                    SELECT DISTINCT ON (unique_video_id)
                         unique_video_id,
                         source as platform,
                         video_title as title,
                         thumbnail_url,
                         video_author_name as author_name,
-                        created_at as metadata_fetched_at
+                        created_at as metadata_fetched_at,
+                        url,
+                        embed_code
                     FROM videos 
                     WHERE unique_video_id IN ({placeholders})
+                    ORDER BY unique_video_id, created_at DESC
                     """
                     
                     cur.execute(query, video_ids)
@@ -47,14 +51,16 @@ class MetadataUpdater:
                     
                     metadata_dict = {}
                     for row in results:
-                        video_id, platform, title, thumbnail_url, author_name, fetched_at = row
+                        video_id, platform, title, thumbnail_url, author_name, fetched_at, url, embed_code = row
                         metadata_dict[video_id] = {
                             'platform': platform,
                             'title': title,
                             'thumbnailUrl': thumbnail_url,
                             'authorName': author_name,
                             'metadata_fetched_at': fetched_at,
-                            'unique_video_id': video_id
+                            'unique_video_id': video_id,
+                            'url': url,
+                            'embedCode': embed_code
                         }
                     
                     logging.info(f"Retrieved metadata for {len(metadata_dict)} videos from database")
