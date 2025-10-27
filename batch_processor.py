@@ -86,6 +86,8 @@ class BatchProcessor:
                             title TEXT,
                             thumbnail_url TEXT,
                             author_name TEXT,
+                            url TEXT,
+                            embed_code TEXT,
                             created_at TIMESTAMP DEFAULT NOW(),
                             updated_at TIMESTAMP DEFAULT NOW(),
                             
@@ -114,7 +116,9 @@ class BatchProcessor:
                                 count,
                                 video_metadata.get('title'),
                                 video_metadata.get('thumbnailUrl'),
-                                video_metadata.get('authorName')
+                                video_metadata.get('authorName'),
+                                video_metadata.get('url'),
+                                video_metadata.get('embedCode')
                             ))
                             
                             # バッチサイズに達したら一括挿入
@@ -129,8 +133,10 @@ class BatchProcessor:
                                             count,
                                             title,
                                             thumbnail_url,
-                                            author_name
-                                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                            author_name,
+                                            url,
+                                            embed_code
+                                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                     """, batch_data)
                                     total_inserted += len(batch_data)
                                     logging.info(f"Inserted batch of {len(batch_data)} items, total: {total_inserted}")
@@ -154,8 +160,10 @@ class BatchProcessor:
                                 count,
                                 title,
                                 thumbnail_url,
-                                author_name
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                author_name,
+                                url,
+                                embed_code
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """, batch_data)
                         total_inserted += len(batch_data)
                         logging.info(f"Inserted final batch of {len(batch_data)} items")
