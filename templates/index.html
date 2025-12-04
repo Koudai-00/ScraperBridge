@@ -234,6 +234,143 @@
             </div>
         </div>
 
+        <!-- Instagram Collection Test Section -->
+        <div class="row mb-5">
+            <div class="col-12">
+                <div class="card border-primary">
+                    <div class="card-header">
+                        <h4 class="card-title mb-0">
+                            <i class="fab fa-instagram me-2"></i>
+                            Instagramコレクション インポートテスト
+                        </h4>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-3">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Instagramのダウンロードデータ（saved_collections_*.json または ZIP）をアップロードして、コレクション内の投稿メタデータを取得します
+                        </p>
+                        
+                        <!-- API Key Input -->
+                        <div class="mb-3">
+                            <label for="collectionApiKey" class="form-label">
+                                <i class="fas fa-key me-1"></i>
+                                APIキー（必須）：
+                            </label>
+                            <input 
+                                type="password" 
+                                class="form-control" 
+                                id="collectionApiKey" 
+                                placeholder="APP_API_KEYを入力してください"
+                            >
+                            <small class="text-muted">環境変数 APP_API_KEY の値を入力してください</small>
+                        </div>
+
+                        <!-- File Upload -->
+                        <div class="mb-3">
+                            <label for="collectionFile" class="form-label">
+                                <i class="fas fa-file-upload me-1"></i>
+                                コレクションファイル：
+                            </label>
+                            <div class="input-group">
+                                <input 
+                                    type="file" 
+                                    class="form-control" 
+                                    id="collectionFile" 
+                                    accept=".json,.zip"
+                                >
+                                <button 
+                                    type="button" 
+                                    class="btn btn-primary" 
+                                    id="extractCollectionBtn"
+                                >
+                                    <i class="fas fa-cloud-upload-alt me-2"></i>
+                                    メタデータを取得
+                                </button>
+                            </div>
+                            <small class="text-muted">対応形式: .json, .zip</small>
+                        </div>
+
+                        <!-- Collection Loading -->
+                        <div id="collectionLoadingSection" style="display: none;">
+                            <div class="d-flex align-items-center text-primary mb-3">
+                                <div class="spinner-border spinner-border-sm me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span>コレクションを処理中... <span id="collectionProgressText"></span></span>
+                            </div>
+                            <div class="progress" style="height: 10px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" 
+                                     id="collectionProgressBar"
+                                     style="width: 0%">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Collection Error -->
+                        <div class="alert alert-danger" id="collectionErrorSection" style="display: none;">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <span id="collectionErrorMessage">エラーが発生しました</span>
+                        </div>
+
+                        <!-- Collection Results Summary -->
+                        <div id="collectionResultsSection" style="display: none;">
+                            <div class="alert alert-success mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        <strong id="collectionName">コレクション名</strong>
+                                    </div>
+                                    <div class="text-end">
+                                        <span class="badge bg-success me-1" id="successCount">0件成功</span>
+                                        <span class="badge bg-danger" id="failCount">0件失敗</span>
+                                    </div>
+                                </div>
+                                <small class="text-muted d-block mt-1" id="sourceFileName">ソースファイル</small>
+                            </div>
+
+                            <!-- Results Table -->
+                            <div class="table-responsive">
+                                <table class="table table-dark table-striped table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 50px;">#</th>
+                                            <th style="width: 80px;">状態</th>
+                                            <th style="width: 100px;">サムネイル</th>
+                                            <th>タイトル</th>
+                                            <th style="width: 150px;">投稿者</th>
+                                            <th style="width: 120px;">動画ID</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="collectionResultsBody">
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- JSON Response Toggle -->
+                            <div class="mt-3">
+                                <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#collectionJsonCollapse">
+                                    <i class="fas fa-code me-1"></i>
+                                    生のJSONレスポンスを表示
+                                </button>
+                                <div class="collapse mt-2" id="collectionJsonCollapse">
+                                    <pre class="bg-dark text-light p-3 rounded border" id="collectionJsonResponse" style="max-height: 300px; overflow-y: auto;"></pre>
+                                </div>
+                            </div>
+
+                            <!-- Clear Button -->
+                            <div class="mt-3">
+                                <button class="btn btn-outline-secondary" id="clearCollectionResults">
+                                    <i class="fas fa-times me-1"></i>
+                                    結果をクリア
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Ranking Test Section -->
         <div class="row mb-5">
             <div class="col-12">

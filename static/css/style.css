@@ -114,3 +114,34 @@ code {
 .card.border-secondary {
     border-color: var(--bs-secondary) !important;
 }
+
+.card.border-primary {
+    border-color: var(--bs-primary) !important;
+}
+
+/* Collection results table */
+#collectionResultsBody img.img-thumbnail {
+    border-radius: 4px;
+    object-fit: cover;
+}
+
+#collectionResultsBody .text-truncate {
+    max-width: 300px;
+}
+
+#collectionResultsBody code {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.3rem;
+}
+
+/* Progress bar styling */
+.progress {
+    background-color: var(--bs-gray-800);
+}
+
+/* Collection JSON response */
+#collectionJsonResponse {
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}

@@ -383,14 +383,213 @@ class MetadataExtractor {
     }
 }
 
+class CollectionExtractor {
+    constructor() {
+        this.initializeElements();
+        this.bindEvents();
+    }
+
+    initializeElements() {
+        this.apiKeyInput = document.getElementById('collectionApiKey');
+        this.fileInput = document.getElementById('collectionFile');
+        this.extractBtn = document.getElementById('extractCollectionBtn');
+        this.loadingSection = document.getElementById('collectionLoadingSection');
+        this.progressText = document.getElementById('collectionProgressText');
+        this.progressBar = document.getElementById('collectionProgressBar');
+        this.errorSection = document.getElementById('collectionErrorSection');
+        this.errorMessage = document.getElementById('collectionErrorMessage');
+        this.resultsSection = document.getElementById('collectionResultsSection');
+        this.collectionName = document.getElementById('collectionName');
+        this.successCount = document.getElementById('successCount');
+        this.failCount = document.getElementById('failCount');
+        this.sourceFileName = document.getElementById('sourceFileName');
+        this.resultsBody = document.getElementById('collectionResultsBody');
+        this.jsonResponse = document.getElementById('collectionJsonResponse');
+        this.clearBtn = document.getElementById('clearCollectionResults');
+    }
+
+    bindEvents() {
+        this.extractBtn.addEventListener('click', () => this.extractCollection());
+        this.clearBtn.addEventListener('click', () => this.clearResults());
+        
+        this.fileInput.addEventListener('change', () => {
+            if (this.resultsSection.style.display !== 'none' || 
+                this.errorSection.style.display !== 'none') {
+                this.clearResults();
+            }
+        });
+    }
+
+    async extractCollection() {
+        const apiKey = this.apiKeyInput.value.trim();
+        const file = this.fileInput.files[0];
+
+        if (!apiKey) {
+            this.showError('APIキーを入力してください');
+            return;
+        }
+
+        if (!file) {
+            this.showError('ファイルを選択してください');
+            return;
+        }
+
+        try {
+            this.showLoading();
+            this.updateProgress('ファイルをアップロード中...', 10);
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            this.updateProgress('サーバーで処理中...', 30);
+
+            const response = await fetch('/api/extract-collection-metadata', {
+                method: 'POST',
+                headers: {
+                    'X-API-Key': apiKey
+                },
+                body: formData
+            });
+
+            this.updateProgress('レスポンスを処理中...', 70);
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || `HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            if (!result.success) {
+                throw new Error(result.error || 'コレクションの処理に失敗しました');
+            }
+
+            this.updateProgress('完了!', 100);
+            this.displayResults(result);
+
+        } catch (error) {
+            console.error('Collection extraction error:', error);
+            this.showError(error.message);
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    showLoading() {
+        this.loadingSection.style.display = 'block';
+        this.errorSection.style.display = 'none';
+        this.resultsSection.style.display = 'none';
+        this.extractBtn.disabled = true;
+        this.extractBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>処理中...';
+    }
+
+    hideLoading() {
+        this.loadingSection.style.display = 'none';
+        this.extractBtn.disabled = false;
+        this.extractBtn.innerHTML = '<i class="fas fa-cloud-upload-alt me-2"></i>メタデータを取得';
+    }
+
+    updateProgress(text, percent) {
+        this.progressText.textContent = text;
+        this.progressBar.style.width = `${percent}%`;
+    }
+
+    showError(message) {
+        this.errorSection.style.display = 'block';
+        this.resultsSection.style.display = 'none';
+        this.errorMessage.textContent = message;
+    }
+
+    displayResults(result) {
+        this.errorSection.style.display = 'none';
+        this.resultsSection.style.display = 'block';
+
+        this.collectionName.textContent = result.collection_name || '名称なし';
+        this.successCount.textContent = `${result.successful}件成功`;
+        this.failCount.textContent = `${result.failed}件失敗`;
+        this.sourceFileName.textContent = `ソースファイル: ${result.source_file}`;
+
+        this.resultsBody.innerHTML = '';
+
+        result.results.forEach((item, index) => {
+            const row = document.createElement('tr');
+            
+            if (item.success && item.data) {
+                const data = item.data;
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td><span class="badge bg-success"><i class="fas fa-check"></i></span></td>
+                    <td>
+                        ${data.thumbnailUrl 
+                            ? `<img src="${data.thumbnailUrl}" class="img-thumbnail" style="max-width: 80px; max-height: 60px;" alt="thumbnail" onerror="this.style.display='none'">`
+                            : '<span class="text-muted">-</span>'
+                        }
+                    </td>
+                    <td>
+                        <div class="text-truncate" style="max-width: 300px;" title="${this.escapeHtml(data.title || '')}">
+                            ${this.escapeHtml(data.title || '（タイトルなし）')}
+                        </div>
+                        <small class="text-muted">
+                            <a href="${item.url}" target="_blank" class="text-info">
+                                <i class="fas fa-external-link-alt me-1"></i>開く
+                            </a>
+                        </small>
+                    </td>
+                    <td>${this.escapeHtml(data.authorName || '-')}</td>
+                    <td><code>${data.unique_video_id || '-'}</code></td>
+                `;
+            } else {
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td><span class="badge bg-danger"><i class="fas fa-times"></i></span></td>
+                    <td colspan="4">
+                        <div class="text-danger">
+                            <i class="fas fa-exclamation-circle me-1"></i>
+                            ${this.escapeHtml(item.error || '取得失敗')}
+                        </div>
+                        <small class="text-muted">
+                            <a href="${item.url}" target="_blank" class="text-info">
+                                ${this.escapeHtml(item.url)}
+                            </a>
+                        </small>
+                    </td>
+                `;
+            }
+
+            this.resultsBody.appendChild(row);
+        });
+
+        this.jsonResponse.textContent = JSON.stringify(result, null, 2);
+
+        this.resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    clearResults() {
+        this.errorSection.style.display = 'none';
+        this.resultsSection.style.display = 'none';
+        this.loadingSection.style.display = 'none';
+        this.resultsBody.innerHTML = '';
+        this.jsonResponse.textContent = '';
+        this.progressBar.style.width = '0%';
+        this.progressText.textContent = '';
+    }
+}
+
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     new MetadataExtractor();
+    new CollectionExtractor();
     
     // Add some helpful console messages for developers
     console.log('🚀 SNSメタデータ抽出ツールが初期化されました');
     console.log('📚 API ドキュメント:');
     console.log('  POST /api/v2/get-metadata - URLからメタデータを抽出');
     console.log('  POST /api/get-metadata - 旧エンドポイント');
+    console.log('  POST /api/extract-collection-metadata - Instagramコレクション抽出');
     console.log('  GET /api/health - ヘルスチェック');
 });
