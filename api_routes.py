@@ -791,3 +791,248 @@ def get_metrics():
     except Exception as e:
         logging.error(f"Error fetching metrics: {e}")
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+
+
+@api_bp.route('/extract-collection-metadata', methods=['POST'])
+@require_api_key('app')
+def extract_collection_metadata():
+    """
+    InstagramコレクションファイルからURLを抽出し、各投稿のメタデータを取得
+    
+    Request headers:
+    {
+        "X-API-Key": "your-app-api-key"
+    }
+    
+    Request:
+    - Content-Type: multipart/form-data
+    - file: JSONファイル または ZIPファイル
+    
+    Response (成功時):
+    {
+        "success": true,
+        "collection_name": "コレクション名",
+        "total_urls": 4,
+        "successful": 3,
+        "failed": 1,
+        "results": [
+            {
+                "url": "https://www.instagram.com/reel/...",
+                "success": true,
+                "data": {
+                    "platform": "instagram",
+                    "unique_video_id": "...",
+                    "title": "...",
+                    "thumbnailUrl": "...",
+                    "authorName": "...",
+                    "embedCode": "..."
+                }
+            },
+            {
+                "url": "https://www.instagram.com/reel/...",
+                "success": false,
+                "error": "エラーメッセージ"
+            }
+        ]
+    }
+    
+    Response (エラー時):
+    {
+        "success": false,
+        "error": "エラーメッセージ"
+    }
+    """
+    import zipfile
+    import io
+    import json
+    import tempfile
+    import os as os_module
+    
+    try:
+        # ファイルが送信されているか確認
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False,
+                'error': 'ファイルが送信されていません。fileフィールドにJSONまたはZIPファイルを添付してください。'
+            }), 400
+        
+        uploaded_file = request.files['file']
+        
+        if uploaded_file.filename == '':
+            return jsonify({
+                'success': False,
+                'error': 'ファイルが選択されていません。'
+            }), 400
+        
+        filename = uploaded_file.filename.lower()
+        file_content = uploaded_file.read()
+        
+        logging.info(f"Received file: {uploaded_file.filename}, size: {len(file_content)} bytes")
+        
+        # コレクションJSONを探す
+        collection_json_data = None
+        collection_filename = None
+        
+        if filename.endswith('.json'):
+            # JSONファイルの場合は直接解析
+            try:
+                collection_json_data = json.loads(file_content.decode('utf-8'))
+                collection_filename = uploaded_file.filename
+                logging.info(f"Parsed JSON file: {collection_filename}")
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                return jsonify({
+                    'success': False,
+                    'error': f'JSONファイルの解析に失敗しました: {str(e)}'
+                }), 400
+                
+        elif filename.endswith('.zip'):
+            # ZIPファイルの場合は展開してJSONファイルを探す
+            try:
+                with zipfile.ZipFile(io.BytesIO(file_content), 'r') as zip_ref:
+                    # ZIPファイル内のファイル一覧を取得
+                    file_list = zip_ref.namelist()
+                    logging.info(f"ZIP file contains: {file_list}")
+                    
+                    # コレクションJSONファイルを探す（saved_collectionsを含むファイルを優先）
+                    json_files = [f for f in file_list if f.endswith('.json')]
+                    
+                    if not json_files:
+                        return jsonify({
+                            'success': False,
+                            'error': 'ZIPファイル内にJSONファイルが見つかりませんでした。'
+                        }), 400
+                    
+                    # saved_collectionsを含むファイルを優先的に探す
+                    collection_file = None
+                    for jf in json_files:
+                        if 'saved_collections' in jf.lower() or 'collection' in jf.lower():
+                            collection_file = jf
+                            break
+                    
+                    # 見つからない場合は最初のJSONファイルを使用
+                    if not collection_file:
+                        collection_file = json_files[0]
+                    
+                    logging.info(f"Using collection file from ZIP: {collection_file}")
+                    
+                    # JSONファイルを読み込んで解析
+                    with zip_ref.open(collection_file) as json_file:
+                        json_content = json_file.read()
+                        collection_json_data = json.loads(json_content.decode('utf-8'))
+                        collection_filename = collection_file
+                        
+            except zipfile.BadZipFile:
+                return jsonify({
+                    'success': False,
+                    'error': 'ZIPファイルの形式が正しくありません。'
+                }), 400
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                return jsonify({
+                    'success': False,
+                    'error': f'ZIP内のJSONファイルの解析に失敗しました: {str(e)}'
+                }), 400
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'サポートされていないファイル形式です。JSONまたはZIPファイルを送信してください。'
+            }), 400
+        
+        # コレクションJSONからURLを抽出
+        urls = []
+        collection_name = None
+        
+        # saved_saved_collections形式を解析
+        if 'saved_saved_collections' in collection_json_data:
+            collections = collection_json_data['saved_saved_collections']
+            
+            for item in collections:
+                # コレクション名を取得（titleフィールドがある場合）
+                if 'title' in item and not collection_name:
+                    raw_title = item['title']
+                    try:
+                        collection_name = raw_title.encode('latin1').decode('utf-8')
+                    except (UnicodeDecodeError, UnicodeEncodeError):
+                        collection_name = raw_title
+                
+                # string_map_dataからURLを抽出
+                if 'string_map_data' in item:
+                    string_map = item['string_map_data']
+                    
+                    # Nameフィールドからコレクション名またはURLを取得
+                    if 'Name' in string_map:
+                        name_data = string_map['Name']
+                        
+                        # コレクション名を取得（valueがあってhrefがない場合）
+                        if 'value' in name_data and 'href' not in name_data and not collection_name:
+                            # UTF-8エンコードされた文字列をデコード
+                            raw_value = name_data['value']
+                            try:
+                                collection_name = raw_value.encode('latin1').decode('utf-8')
+                            except (UnicodeDecodeError, UnicodeEncodeError):
+                                collection_name = raw_value
+                        
+                        # URLを取得（hrefがある場合）
+                        if 'href' in name_data:
+                            url = name_data['href']
+                            if url and 'instagram.com' in url:
+                                urls.append(url)
+                                logging.info(f"Found Instagram URL: {url}")
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'コレクションデータが見つかりませんでした。Instagramからダウンロードしたコレクションファイルを使用してください。'
+            }), 400
+        
+        if not urls:
+            return jsonify({
+                'success': False,
+                'error': 'コレクション内にInstagramの投稿URLが見つかりませんでした。'
+            }), 400
+        
+        logging.info(f"Found {len(urls)} Instagram URLs in collection '{collection_name}'")
+        
+        # 各URLに対してメタデータを取得
+        results = []
+        successful_count = 0
+        failed_count = 0
+        
+        for url in urls:
+            try:
+                # 既存のメタデータ取得機能を使用
+                metadata = extractor.extract_metadata(url.strip())
+                
+                results.append({
+                    'url': url,
+                    'success': True,
+                    'data': metadata
+                })
+                successful_count += 1
+                logging.info(f"Successfully extracted metadata for: {url}")
+                
+            except Exception as e:
+                error_msg = str(e)
+                logging.warning(f"Failed to extract metadata for {url}: {error_msg}")
+                
+                results.append({
+                    'url': url,
+                    'success': False,
+                    'error': error_msg
+                })
+                failed_count += 1
+        
+        return jsonify({
+            'success': True,
+            'collection_name': collection_name,
+            'source_file': collection_filename,
+            'total_urls': len(urls),
+            'successful': successful_count,
+            'failed': failed_count,
+            'results': results
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error in extract_collection_metadata: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'サーバーエラーが発生しました: {str(e)}'
+        }), 500
