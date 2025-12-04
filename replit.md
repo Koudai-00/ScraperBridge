@@ -138,3 +138,22 @@ Preferred communication style: Simple, everyday language.
   - `APIFY_API_TOKEN`: Apify API authentication
   - `SCRAPINGBEE_API_KEY`: ScrapingBee API authentication
   - `SESSION_SECRET`: Flask session encryption key
+
+### Instagram Collection Import Feature (December 2025)
+- **New Endpoint**: `POST /api/extract-collection-metadata` - Extract metadata from Instagram collection files
+- **File Support**: 
+  - JSON files (direct upload of `saved_collections_*.json`)
+  - ZIP files (auto-extracts and finds collection JSON inside)
+- **Processing Flow**:
+  1. Receive JSON or ZIP file via multipart/form-data
+  2. Parse `saved_saved_collections` structure from Instagram export
+  3. Extract collection name (UTF-8 decoded from latin1)
+  4. Extract all Instagram URLs from collection items
+  5. Fetch metadata for each URL using existing Instagram extraction
+  6. Return aggregated results with success/failure counts
+- **Authentication**: Requires `APP_API_KEY` header (`X-API-Key`)
+- **Response Format**: Same as existing batch metadata endpoint with additional collection info
+- **Error Handling**: 
+  - Invalid file format errors
+  - Missing collection data errors
+  - Per-URL extraction error tracking
