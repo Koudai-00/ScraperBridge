@@ -76,23 +76,29 @@ class RecipeExtractor:
         logging.info("Checking YouTube description for recipe...")
         description_recipe = self._get_recipe_from_description(video_id)
         if description_recipe:
-            logging.info("Recipe found in description")
+            logging.info("Recipe found in description, refining with AI...")
+            # AIで整形
+            refined_result = self._refine_recipe_text_with_ai(description_recipe)
+            
             return {
-                'recipe_text': description_recipe,
+                'recipe_text': refined_result['recipe_text'],
                 'extraction_method': 'description',
-                'ai_model': None,
-                'tokens_used': None
+                'ai_model': refined_result['ai_model'],
+                'tokens_used': refined_result['tokens_used']
             }
 
         logging.info("Checking YouTube comments for recipe...")
         comment_recipe = self._get_recipe_from_comments(video_id)
         if comment_recipe:
-            logging.info("Recipe found in author's comment")
+            logging.info("Recipe found in author's comment, refining with AI...")
+            # AIで整形
+            refined_result = self._refine_recipe_text_with_ai(comment_recipe)
+            
             return {
-                'recipe_text': comment_recipe,
+                'recipe_text': refined_result['recipe_text'],
                 'extraction_method': 'comment',
-                'ai_model': None,
-                'tokens_used': None
+                'ai_model': refined_result['ai_model'],
+                'tokens_used': refined_result['tokens_used']
             }
 
         logging.info("Extracting recipe from video using Gemini AI...")
@@ -273,12 +279,93 @@ class RecipeExtractor:
         """AIからの応答をクリーニングして不要な前置きを削除"""
         unwanted_prefixes = [
             r'^はい、.*?。\s*', r'^はい。\s*', r'^動画を拝見しました。?\s*', r'^以下に.*?します。?\s*',
-            r'^レシピをテキスト化します。?\s*', r'^こちらがレシピです。?\s*'
+            r'^レシピをテキスト化します。?\s*', r'^こちらがレシピです。?\s*',
+            r'^```json\s*', r'\s*```$'
         ]
         cleaned = text
         for pattern in unwanted_prefixes:
-            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(pattern, '', cleaned, flags=re.MULTILINE | re.IGNORECASE)
         return cleaned.strip()
+
+    def _refine_recipe_text_with_ai(self, text: str) -> Dict[str, Any]:
+        """抽出されたテキストからAIを使ってレシピ部分のみを綺麗に抽出・整形する"""
+        try:
+            self._ensure_gemini_initialized()
+            
+            # テキストが短すぎる場合はそのまま返す（コスト節約）
+            if len(text) < 100:
+                print(f"Text too short for AI refinement ({len(text)} chars), returning original.")
+                return {
+                    'recipe_text': text,
+                    'ai_model': None,
+                    'tokens_used': 0
+                }
+
+            model_name = 'gemini-2.0-flash-exp'
+            # Fallback to 1.5 flash if 2.0 is not available or desired
+            # model_name = 'gemini-1.5-flash' 
+            
+            model = genai.GenerativeModel(model_name)
+            
+            prompt = """
+以下のテキストから「レシピ情報（料理名、材料、作り方、コツ）」のみを抽出し、JSON形式「のみ」で出力してください。
+前置きや、レシピと関係のない挨拶、SNSリンク、ハッシュタグなどは全て削除してください。
+
+入力テキスト:
+""" + text + """
+
+出力フォーマット（JSON）:
+{"dish_name": "料理名", "ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}
+
+※必須: JSONのみを出力すること。markdown記法（```json）は不要です。
+"""
+            logging.info(f"Refining recipe text with Gemini ({model_name})...")
+            response = model.generate_content(prompt)
+            
+            raw_text = response.text.strip()
+            tokens_used = self._estimate_tokens(response)
+            
+            # JSON解析を試みる
+            try:
+                # markdownコードブロックの削除を試みる
+                json_text = re.sub(r'^```json\s*|\s*```$', '', raw_text, flags=re.MULTILINE).strip()
+                recipe_json = json.loads(json_text)
+                
+                # 必須フィールドの確認
+                if not recipe_json.get('ingredients') and not recipe_json.get('steps'):
+                    logging.warning("AI extracted JSON missing ingredients/steps, falling back to clean text")
+                    return {
+                        'recipe_text': self._clean_recipe_text(text), # 元のテキストをクリーニングして返す
+                        'ai_model': model_name,
+                        'tokens_used': tokens_used
+                    }
+                
+                # JSONをテキスト形式に変換
+                refined_text = self._convert_json_to_text(recipe_json)
+                logging.info("Successfully refined recipe text with AI")
+                
+                return {
+                    'recipe_text': refined_text,
+                    'ai_model': model_name,
+                    'tokens_used': tokens_used
+                }
+                
+            except json.JSONDecodeError:
+                logging.warning("Failed to parse AI response as JSON, using raw cleaned response")
+                return {
+                    'recipe_text': self._clean_recipe_text(raw_text),
+                    'ai_model': model_name,
+                    'tokens_used': tokens_used
+                }
+                
+        except Exception as e:
+            logging.error(f"Error in _refine_recipe_text_with_ai: {e}")
+            # エラー時は元のテキストを返す（フェイルセーフ）
+            return {
+                'recipe_text': self._clean_recipe_text(text),
+                'ai_model': None,
+                'tokens_used': 0
+            }
 
     def _convert_json_to_text(self, recipe_json: Dict[str, Any]) -> str:
         """JSON形式のレシピをテキスト形式に変換"""
@@ -512,12 +599,15 @@ class RecipeExtractor:
                     description, str) and self._contains_recipe(description):
                 recipe = self._extract_recipe_text(description)
                 if recipe:
-                    logging.info(f"Recipe found in {platform} description")
+                    logging.info(f"Recipe found in {platform} description, refining with AI...")
+                    # AIで整形
+                    refined_result = self._refine_recipe_text_with_ai(recipe)
+                    
                     return {
-                        'recipe_text': recipe,
+                        'recipe_text': refined_result['recipe_text'],
                         'extraction_method': 'description',
-                        'ai_model': None,
-                        'tokens_used': None
+                        'ai_model': refined_result['ai_model'],
+                        'tokens_used': refined_result['tokens_used']
                     }
         except Exception as e:
             logging.warning(
