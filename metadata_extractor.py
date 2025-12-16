@@ -1099,7 +1099,7 @@ class MetadataExtractor:
                 params = {
                     'part': 'snippet',
                     'playlistId': playlist_id,
-                    'maxResults': 10,  # Limit to 10 for testing
+                    'maxResults': 50,  # Max allowed per request by API
                     'key': self.youtube_api_key
                 }
                 
@@ -1108,7 +1108,9 @@ class MetadataExtractor:
                 
                 data = response.json()
                 api_videos = []
+                next_page_token = data.get('nextPageToken')
                 
+                # First batch of videos
                 for item in data.get('items', []):
                     snippet = item.get('snippet', {})
                     video_id = snippet.get('resourceId', {}).get('videoId')
@@ -1120,6 +1122,31 @@ class MetadataExtractor:
                             'thumbnailUrl': snippet.get('thumbnails', {}).get('high', {}).get('url', '')
                         }
                         api_videos.append(video_data)
+                
+                # Fetch more pages if needed (up to 500 videos total)
+                while next_page_token and len(api_videos) < 500:
+                    params['pageToken'] = next_page_token
+                    
+                    response = self.session.get(api_url, params=params, timeout=15)
+                    response.raise_for_status()
+                    
+                    data = response.json()
+                    next_page_token = data.get('nextPageToken')
+                    
+                    for item in data.get('items', []):
+                        snippet = item.get('snippet', {})
+                        video_id = snippet.get('resourceId', {}).get('videoId')
+                        
+                        if video_id:
+                            video_data = {
+                                'title': snippet.get('title', ''),
+                                'videoUrl': f"https://www.youtube.com/watch?v={video_id}",
+                                'thumbnailUrl': snippet.get('thumbnails', {}).get('high', {}).get('url', '')
+                            }
+                            api_videos.append(video_data)
+                            
+                            if len(api_videos) >= 500:
+                                break
                 
                 if api_videos:
                     logging.info(f"Successfully extracted {len(api_videos)} videos from playlist using API")
@@ -1167,8 +1194,8 @@ class MetadataExtractor:
                         }
                         videos.append(video_data)
                         
-                        # Limit to 10 videos for testing
-                        if len(videos) >= 10:
+                        # Limit to 500 videos
+                        if len(videos) >= 500:
                             break
             
             if not videos:
@@ -1177,7 +1204,7 @@ class MetadataExtractor:
                 for script in script_tags:
                     if script.string and 'videoId' in script.string:
                         video_ids = re.findall(r'"videoId":"([^"]+)"', script.string)
-                        for video_id in video_ids[:10]:  # Limit to 10
+                        for video_id in video_ids[:500]:  # Limit to 500
                             if video_id not in seen_video_ids:
                                 seen_video_ids.add(video_id)
                                 video_data = {
