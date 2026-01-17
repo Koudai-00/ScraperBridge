@@ -118,11 +118,17 @@ Preferred communication style: Simple, everyday language.
   - TikTok: `clockworks/free-tiktok-scraper`
   - Instagram: `apify/instagram-scraper`
 
-### Description Refinement with Gemini (October 5, 2025)
-- **New Method**: `_refine_recipe_with_gemini` - Cleans YouTube description text using Gemini
-- **Processing Strategy**: When recipe detected in description, send full text to Gemini to remove promotional content
-- **Content Preservation**: Recipe content (ingredients, amounts, steps) preserved exactly, only removes extra text
-- **Fallback**: If Gemini refinement fails, uses traditional regex-based extraction
+### Recipe Refinement with Gemini (January 2026)
+- **Method**: `_refine_recipe_with_gemini` - Uses Gemini 2.0 Flash to refine extracted recipes
+- **Applied To**: Both description-based and comment-based recipe extraction
+- **Processing Strategy**: 
+  1. When recipe detected in description or author comment, extract raw text
+  2. Send to Gemini 2.0 Flash with structured prompt
+  3. Gemini removes promotional content, hashtags, SNS links
+  4. Returns structured JSON format (dish_name, ingredients, steps, tips)
+  5. Convert JSON to formatted text with【材料】【作り方】sections
+- **Fallback**: If Gemini fails or quota exceeded, returns original text unchanged
+- **Model**: `gemini-2.0-flash-exp` (free tier)
 
 ### Security Improvements (October 23, 2025)
 - **API Key Protection**: All API keys stored in environment variables only (never hardcoded)
