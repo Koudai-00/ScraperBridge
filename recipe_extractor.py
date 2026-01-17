@@ -475,7 +475,10 @@ class RecipeExtractor:
     def get_available_models(self) -> list:
         """利用可能なGeminiモデルのリストを返す"""
         return [
-            {'id': 'gemini-2.0-flash-exp', 'name': 'Gemini 2.0 Flash Experimental (Free)', 'default': True},
+            {'id': 'gemini-3-flash-preview', 'name': 'Gemini 3 Flash Preview', 'default': False},
+            {'id': 'gemini-2.5-pro', 'name': 'Gemini 2.5 Pro', 'default': False},
+            {'id': 'gemini-2.5-flash', 'name': 'Gemini 2.5 Flash', 'default': True},
+            {'id': 'gemini-2.0-flash-exp', 'name': 'Gemini 2.0 Flash Experimental (Free)', 'default': False},
             {'id': 'gemini-1.5-flash', 'name': 'Gemini 1.5 Flash', 'default': False},
             {'id': 'gemini-1.5-pro', 'name': 'Gemini 1.5 Pro', 'default': False},
         ]
