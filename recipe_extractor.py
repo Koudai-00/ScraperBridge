@@ -472,6 +472,188 @@ class RecipeExtractor:
         logging.info(f"Normalized URL: {video_url} -> {normalized_url}")
         return normalized_url
 
+    def get_available_models(self) -> list:
+        """利用可能なGeminiモデルのリストを返す"""
+        return [
+            {'id': 'gemini-2.0-flash-exp', 'name': 'Gemini 2.0 Flash Experimental (Free)', 'default': True},
+            {'id': 'gemini-1.5-flash', 'name': 'Gemini 1.5 Flash', 'default': False},
+            {'id': 'gemini-1.5-pro', 'name': 'Gemini 1.5 Pro', 'default': False},
+        ]
+
+    def extract_recipe_with_model(self, video_url: str, model_name: str = None) -> Dict[str, Any]:
+        """
+        テスト用: 指定されたモデルでレシピを抽出
+        
+        Args:
+            video_url: 動画URL
+            model_name: 使用するGeminiモデル名（Noneの場合はデフォルト）
+        """
+        platform = self._detect_platform(video_url)
+        
+        if model_name is None:
+            model_name = 'gemini-2.0-flash-exp'
+        
+        if platform == "youtube":
+            return self._extract_recipe_from_youtube_with_model(video_url, model_name)
+        elif platform in ["tiktok", "instagram"]:
+            return self._extract_recipe_from_other_platform_with_model(video_url, platform, model_name)
+        else:
+            raise ValueError(f"Unsupported platform for URL: {video_url}")
+
+    def _extract_recipe_from_youtube_with_model(self, video_url: str, model_name: str) -> Dict[str, Any]:
+        """YouTubeからレシピを抽出（モデル指定版）"""
+        video_id = self._extract_youtube_id(video_url)
+        if not video_id:
+            raise ValueError("Invalid YouTube URL")
+
+        logging.info("Checking YouTube description for recipe...")
+        description_recipe = self._get_recipe_from_description(video_id)
+        if description_recipe:
+            logging.info("Recipe found in description")
+            return {
+                'recipe_text': description_recipe,
+                'extraction_method': 'description',
+                'ai_model': model_name if 'gemini' in model_name.lower() else None,
+                'tokens_used': None
+            }
+
+        logging.info("Checking YouTube comments for recipe...")
+        comment_recipe = self._get_recipe_from_comments(video_id)
+        if comment_recipe:
+            logging.info("Recipe found in author's comment")
+            return {
+                'recipe_text': comment_recipe,
+                'extraction_method': 'comment',
+                'ai_model': model_name if 'gemini' in model_name.lower() else None,
+                'tokens_used': None
+            }
+
+        logging.info(f"Extracting recipe from video using Gemini AI ({model_name})...")
+        return self._extract_recipe_with_gemini_model(video_url, model_name)
+
+    def _extract_recipe_from_other_platform_with_model(self, video_url: str, platform: str, model_name: str) -> Dict[str, Any]:
+        """TikTok/Instagramからレシピを抽出（モデル指定版）"""
+        logging.info(f"Attempting to extract recipe from {platform} description...")
+        try:
+            response = self.session.get(video_url, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            description = None
+            meta_description = soup.find('meta', property='og:description')
+            if meta_description and hasattr(meta_description, 'get'):
+                description = meta_description.get('content', '')
+
+            if description and isinstance(description, str) and self._contains_recipe(description):
+                recipe = self._extract_recipe_text(description)
+                if recipe:
+                    logging.info(f"Recipe found in {platform} description")
+                    return {
+                        'recipe_text': recipe,
+                        'extraction_method': 'description',
+                        'ai_model': None,
+                        'tokens_used': None
+                    }
+        except Exception as e:
+            logging.warning(f"Could not fetch {platform} description: {e}. Proceeding with video analysis.")
+
+        logging.info(f"No recipe in {platform} description, attempting video analysis with {model_name}...")
+        return self._extract_recipe_with_gemini_model(video_url, model_name)
+
+    def _extract_recipe_with_gemini_model(self, video_url: str, model_name: str) -> Dict[str, Any]:
+        """Gemini APIを使って動画からレシピを抽出（モデル指定版）"""
+        temp_video_path = None
+        video_file = None
+        try:
+            self._ensure_gemini_initialized()
+            
+            platform = self._detect_platform(video_url)
+            
+            download_url = video_url
+            if platform in ['tiktok', 'instagram']:
+                logging.info(f"Detected {platform}, using Apify to get download URL...")
+                apify_download_url = self._get_video_download_url_from_apify(video_url, platform)
+                if apify_download_url:
+                    download_url = apify_download_url
+                    logging.info(f"Using Apify download URL for {platform}")
+                else:
+                    logging.warning(f"Failed to get download URL from Apify for {platform}, trying direct download")
+            
+            logging.info(f"Downloading video from URL: {download_url}")
+            ydl_opts = {
+                'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
+                'outtmpl': 'temp_video_%(id)s.%(ext)s',
+                'quiet': True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(download_url, download=True)
+                temp_video_path = ydl.prepare_filename(info_dict)
+
+            if not temp_video_path or not os.path.exists(temp_video_path):
+                raise FileNotFoundError("Failed to download the video file.")
+            logging.info(f"Video downloaded to: {temp_video_path}")
+
+            logging.info("Uploading video file to Gemini...")
+            video_file = genai.upload_file(path=temp_video_path)
+            while video_file.state.name == "PROCESSING":
+                time.sleep(2)
+                video_file = genai.get_file(video_file.name)
+            if video_file.state.name == "FAILED":
+                raise ValueError(f"Video processing failed on Google's server: {video_file.uri}")
+            logging.info("Video uploaded and processed.")
+
+            model = genai.GenerativeModel(model_name)
+            prompt = """
+この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
+{"dish_name": "料理名", "ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}
+動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。
+"""
+            logging.info(f"Sending video to Gemini ({model_name})...")
+            response = model.generate_content([video_file, prompt])
+
+            raw_text = response.text.strip()
+            logging.debug(f"Gemini raw response: {raw_text[:200]}...")
+
+            recipe_text = None
+            try:
+                json_text = re.sub(r'^```json\s*|\s*```$', '', raw_text, flags=re.MULTILINE).strip()
+                recipe_json = json.loads(json_text)
+                if recipe_json.get('error'):
+                    raise ValueError("No recipe found in video")
+                if not recipe_json.get('ingredients') or not recipe_json.get('steps'):
+                    raise json.JSONDecodeError("Missing required fields", json_text, 0)
+                recipe_text = self._convert_json_to_text(recipe_json)
+                logging.info("Successfully parsed JSON response from Gemini")
+            except json.JSONDecodeError:
+                logging.warning("Failed to parse JSON, using text fallback")
+                recipe_text = self._clean_recipe_text(raw_text)
+
+            if "レシピが見つかりませんでした" in recipe_text:
+                raise ValueError("No recipe found in video")
+            if not self._validate_recipe_structure(recipe_text):
+                raise ValueError("Incomplete recipe: missing ingredients or steps")
+
+            tokens_used = self._estimate_tokens(response)
+            return {
+                'recipe_text': recipe_text,
+                'extraction_method': 'ai_video',
+                'ai_model': model_name,
+                'tokens_used': tokens_used
+            }
+        except Exception as e:
+            logging.error(f"Error in _extract_recipe_with_gemini_model: {e}")
+            raise
+        finally:
+            if video_file:
+                try:
+                    genai.delete_file(video_file.name)
+                    logging.info(f"Deleted uploaded file: {video_file.name}")
+                except Exception as e:
+                    logging.warning(f"Could not delete uploaded file {video_file.name}: {e}")
+            if temp_video_path and os.path.exists(temp_video_path):
+                os.remove(temp_video_path)
+                logging.info(f"Deleted temp local file: {temp_video_path}")
+
     def _extract_recipe_with_gemini(self, video_url: str) -> Dict[str, Any]:
         """Gemini APIを使って動画からレシピを抽出（動画アップロード対応版）"""
         temp_video_path = None
@@ -479,10 +661,8 @@ class RecipeExtractor:
         try:
             self._ensure_gemini_initialized()
             
-            # プラットフォームを判定
             platform = self._detect_platform(video_url)
             
-            # TikTok/InstagramはApifyでダウンロードURLを取得
             download_url = video_url
             if platform in ['tiktok', 'instagram']:
                 logging.info(f"Detected {platform}, using Apify to get download URL...")

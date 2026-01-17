@@ -1036,3 +1036,96 @@ def extract_collection_metadata():
             'success': False,
             'error': f'サーバーエラーが発生しました: {str(e)}'
         }), 500
+
+
+@api_bp.route('/test/extract-recipe', methods=['POST'])
+def test_extract_recipe():
+    """
+    ブラウザテスト用: レシピ抽出（モデル選択可能）
+    
+    ※ アプリ側のエンドポイント /api/extract-recipe は変更なし
+    
+    Request body:
+    {
+        "video_url": "https://www.youtube.com/watch?v=...",
+        "model": "gemini-2.0-flash-exp"  // optional
+    }
+    
+    Response:
+    {
+        "success": true,
+        "recipe_text": "レシピテキスト...",
+        "extraction_method": "description|comment|ai_video",
+        "ai_model": "gemini-2.0-flash-exp",
+        "tokens_used": 1234
+    }
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        if 'video_url' not in data:
+            return jsonify({'error': 'Missing video_url field'}), 400
+
+        video_url = data['video_url'].strip()
+        model_name = data.get('model', 'gemini-2.0-flash-exp')
+
+        if not video_url:
+            return jsonify({'error': 'video_url cannot be empty'}), 400
+
+        logging.info(f"Test recipe extraction - URL: {video_url}, Model: {model_name}")
+
+        try:
+            result = recipe_extractor.extract_recipe_with_model(video_url, model_name)
+
+            return jsonify({
+                'success': True,
+                'recipe_text': result['recipe_text'],
+                'extraction_method': result['extraction_method'],
+                'ai_model': result.get('ai_model'),
+                'tokens_used': result.get('tokens_used', 0)
+            }), 200
+
+        except ValueError as e:
+            logging.warning(f"Test recipe extraction failed: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 400
+
+        except Exception as e:
+            logging.error(f"Test recipe extraction error: {e}")
+            return jsonify({
+                'success': False,
+                'error': f'レシピ抽出に失敗しました: {str(e)}'
+            }), 500
+
+    except Exception as e:
+        logging.error(f"Error in test_extract_recipe: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'サーバーエラーが発生しました: {str(e)}'
+        }), 500
+
+
+@api_bp.route('/test/available-models', methods=['GET'])
+def get_available_models():
+    """
+    利用可能なGeminiモデルのリストを取得
+    
+    Response:
+    {
+        "models": [
+            {"id": "gemini-2.0-flash-exp", "name": "Gemini 2.0 Flash Experimental (Free)", "default": true},
+            ...
+        ]
+    }
+    """
+    try:
+        models = recipe_extractor.get_available_models()
+        return jsonify({'models': models}), 200
+    except Exception as e:
+        logging.error(f"Error getting available models: {e}")
+        return jsonify({'error': str(e)}), 500

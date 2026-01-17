@@ -371,6 +371,133 @@
             </div>
         </div>
 
+        <!-- Recipe Extraction Test Section -->
+        <div class="row mb-5">
+            <div class="col-12">
+                <div class="card border-success">
+                    <div class="card-header">
+                        <h4 class="card-title mb-0">
+                            <i class="fas fa-utensils me-2"></i>
+                            レシピ抽出テスト
+                        </h4>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-3">
+                            <i class="fas fa-info-circle me-1"></i>
+                            動画URLからレシピを抽出します。Geminiモデルを選択して結果を比較できます。
+                        </p>
+                        
+                        <!-- URL Input -->
+                        <div class="mb-3">
+                            <label for="recipeUrlInput" class="form-label">
+                                <i class="fas fa-link me-1"></i>
+                                動画URL：
+                            </label>
+                            <input 
+                                type="url" 
+                                class="form-control" 
+                                id="recipeUrlInput" 
+                                placeholder="例: https://www.youtube.com/watch?v=..."
+                            >
+                        </div>
+
+                        <!-- Model Selection -->
+                        <div class="mb-3">
+                            <label for="geminiModelSelect" class="form-label">
+                                <i class="fas fa-robot me-1"></i>
+                                Geminiモデル：
+                            </label>
+                            <select class="form-select" id="geminiModelSelect">
+                                <option value="gemini-2.0-flash-exp" selected>Gemini 2.0 Flash Experimental (Free)</option>
+                                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                            </select>
+                            <small class="text-muted">説明欄やコメントにレシピがある場合は、モデルに関係なく高速に取得されます</small>
+                        </div>
+
+                        <!-- Extract Button -->
+                        <div class="mb-3">
+                            <button 
+                                type="button" 
+                                class="btn btn-success btn-lg" 
+                                id="extractRecipeBtn"
+                            >
+                                <i class="fas fa-magic me-2"></i>
+                                レシピを抽出
+                            </button>
+                        </div>
+
+                        <!-- Loading -->
+                        <div id="recipeLoadingSection" style="display: none;">
+                            <div class="d-flex align-items-center text-success mb-3">
+                                <div class="spinner-border spinner-border-sm me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span>レシピを抽出中... <span id="recipeProgressText"></span></span>
+                            </div>
+                        </div>
+
+                        <!-- Error -->
+                        <div class="alert alert-danger" id="recipeErrorSection" style="display: none;">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <span id="recipeErrorMessage">エラーが発生しました</span>
+                        </div>
+
+                        <!-- Results -->
+                        <div id="recipeResultsSection" style="display: none;">
+                            <div class="alert alert-success mb-3">
+                                <div class="d-flex justify-content-between align-items-center flex-wrap">
+                                    <div>
+                                        <i class="fas fa-check-circle me-2"></i>
+                                        <strong>レシピ抽出成功</strong>
+                                    </div>
+                                    <div class="mt-2 mt-md-0">
+                                        <span class="badge bg-info me-1" id="extractionMethodBadge">抽出方法</span>
+                                        <span class="badge bg-secondary" id="aiModelBadge">モデル</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Extraction Method Info -->
+                            <div class="mb-3">
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <strong>抽出方法：</strong>
+                                        <span id="extractionMethodText" class="text-info">-</span>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <strong>使用モデル：</strong>
+                                        <span id="usedModelText" class="text-info">-</span>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <strong>トークン数：</strong>
+                                        <span id="tokensUsedText" class="text-info">-</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Recipe Text -->
+                            <div class="mb-3">
+                                <label class="form-label">
+                                    <i class="fas fa-file-alt me-1"></i>
+                                    抽出されたレシピ：
+                                </label>
+                                <pre class="bg-dark text-light p-3 rounded border" id="recipeTextDisplay" style="max-height: 400px; overflow-y: auto; white-space: pre-wrap;"></pre>
+                            </div>
+
+                            <!-- Clear Button -->
+                            <div class="mt-3">
+                                <button class="btn btn-outline-secondary" id="clearRecipeResults">
+                                    <i class="fas fa-times me-1"></i>
+                                    結果をクリア
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Ranking Test Section -->
         <div class="row mb-5">
             <div class="col-12">

@@ -580,10 +580,161 @@ class CollectionExtractor {
     }
 }
 
+class RecipeExtractorTest {
+    constructor() {
+        this.initializeElements();
+        this.bindEvents();
+    }
+
+    initializeElements() {
+        this.urlInput = document.getElementById('recipeUrlInput');
+        this.modelSelect = document.getElementById('geminiModelSelect');
+        this.extractBtn = document.getElementById('extractRecipeBtn');
+        this.loadingSection = document.getElementById('recipeLoadingSection');
+        this.progressText = document.getElementById('recipeProgressText');
+        this.errorSection = document.getElementById('recipeErrorSection');
+        this.errorMessage = document.getElementById('recipeErrorMessage');
+        this.resultsSection = document.getElementById('recipeResultsSection');
+        this.extractionMethodBadge = document.getElementById('extractionMethodBadge');
+        this.aiModelBadge = document.getElementById('aiModelBadge');
+        this.extractionMethodText = document.getElementById('extractionMethodText');
+        this.usedModelText = document.getElementById('usedModelText');
+        this.tokensUsedText = document.getElementById('tokensUsedText');
+        this.recipeTextDisplay = document.getElementById('recipeTextDisplay');
+        this.clearBtn = document.getElementById('clearRecipeResults');
+    }
+
+    bindEvents() {
+        if (this.extractBtn) {
+            this.extractBtn.addEventListener('click', () => this.extractRecipe());
+        }
+        if (this.clearBtn) {
+            this.clearBtn.addEventListener('click', () => this.clearResults());
+        }
+        if (this.urlInput) {
+            this.urlInput.addEventListener('input', () => {
+                if (this.resultsSection.style.display !== 'none' || 
+                    this.errorSection.style.display !== 'none') {
+                    this.clearResults();
+                }
+            });
+        }
+    }
+
+    async extractRecipe() {
+        const url = this.urlInput.value.trim();
+        const model = this.modelSelect.value;
+
+        if (!url) {
+            this.showError('動画URLを入力してください');
+            return;
+        }
+
+        try {
+            this.showLoading();
+            this.progressText.textContent = 'リクエスト送信中...';
+
+            const response = await fetch('/api/test/extract-recipe', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    video_url: url,
+                    model: model
+                })
+            });
+
+            this.progressText.textContent = 'レスポンスを処理中...';
+
+            const result = await response.json();
+
+            if (!response.ok || !result.success) {
+                throw new Error(result.error || 'レシピ抽出に失敗しました');
+            }
+
+            this.displayResults(result);
+
+        } catch (error) {
+            console.error('Recipe extraction error:', error);
+            this.showError(error.message);
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    showLoading() {
+        this.loadingSection.style.display = 'block';
+        this.errorSection.style.display = 'none';
+        this.resultsSection.style.display = 'none';
+        this.extractBtn.disabled = true;
+        this.extractBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>抽出中...';
+    }
+
+    hideLoading() {
+        this.loadingSection.style.display = 'none';
+        this.extractBtn.disabled = false;
+        this.extractBtn.innerHTML = '<i class="fas fa-magic me-2"></i>レシピを抽出';
+    }
+
+    showError(message) {
+        this.errorSection.style.display = 'block';
+        this.resultsSection.style.display = 'none';
+        this.errorMessage.textContent = message;
+    }
+
+    displayResults(result) {
+        this.errorSection.style.display = 'none';
+        this.resultsSection.style.display = 'block';
+
+        const methodLabels = {
+            'description': '説明欄から抽出',
+            'comment': '投稿者コメントから抽出',
+            'ai_video': 'AI動画解析で抽出'
+        };
+
+        const methodColors = {
+            'description': 'bg-primary',
+            'comment': 'bg-info',
+            'ai_video': 'bg-warning text-dark'
+        };
+
+        const method = result.extraction_method;
+        const methodLabel = methodLabels[method] || method;
+        const methodColor = methodColors[method] || 'bg-secondary';
+
+        this.extractionMethodBadge.className = `badge ${methodColor} me-1`;
+        this.extractionMethodBadge.textContent = methodLabel;
+        
+        if (result.ai_model) {
+            this.aiModelBadge.textContent = result.ai_model;
+            this.aiModelBadge.style.display = 'inline';
+        } else {
+            this.aiModelBadge.style.display = 'none';
+        }
+
+        this.extractionMethodText.textContent = methodLabel;
+        this.usedModelText.textContent = result.ai_model || '使用なし';
+        this.tokensUsedText.textContent = result.tokens_used ? result.tokens_used.toLocaleString() : '0';
+
+        this.recipeTextDisplay.textContent = result.recipe_text;
+
+        this.resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    clearResults() {
+        this.errorSection.style.display = 'none';
+        this.resultsSection.style.display = 'none';
+        this.loadingSection.style.display = 'none';
+        this.recipeTextDisplay.textContent = '';
+    }
+}
+
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     new MetadataExtractor();
     new CollectionExtractor();
+    new RecipeExtractorTest();
     
     // Add some helpful console messages for developers
     console.log('🚀 SNSメタデータ抽出ツールが初期化されました');
