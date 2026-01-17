@@ -184,8 +184,12 @@ class RecipeExtractor:
             description = data['items'][0]['snippet'].get('description', '')
 
             if self._contains_recipe(description):
-                recipe = self._extract_recipe_text(description)
-                return recipe if recipe else None
+                raw_recipe = self._extract_recipe_text(description)
+                if raw_recipe:
+                    # Geminiでレシピを整形
+                    refined_recipe = self._refine_recipe_with_gemini(raw_recipe)
+                    return refined_recipe
+                return None
             return None
         except Exception as e:
             logging.error(f"Error fetching YouTube description: {e}")
@@ -232,8 +236,12 @@ class RecipeExtractor:
                 if author_channel_id == channel_id:
                     comment_text = comment.get('textDisplay', '')
                     if self._contains_recipe(comment_text):
-                        recipe = self._extract_recipe_text(comment_text)
-                        return recipe if recipe else None
+                        raw_recipe = self._extract_recipe_text(comment_text)
+                        if raw_recipe:
+                            # Geminiでレシピを整形
+                            refined_recipe = self._refine_recipe_with_gemini(raw_recipe)
+                            return refined_recipe
+                        return None
             return None
         except Exception as e:
             logging.error(f"Error fetching YouTube comments: {e}")
@@ -306,6 +314,84 @@ class RecipeExtractor:
         has_steps = any(k in recipe_text
                         for k in ['【作り方】', '作り方', 'Steps', '手順'])
         return has_ingredients and has_steps
+
+    def _refine_recipe_with_gemini(self, raw_recipe_text: str) -> str:
+        """
+        Gemini 2.0 Flashを使って説明欄/コメントから抽出したレシピを整形する
+        
+        宣伝文や余計なテキストを除去し、レシピ部分のみを構造化して返す
+        失敗時は元のテキストをそのまま返す
+        """
+        try:
+            self._ensure_gemini_initialized()
+            
+            model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            
+            prompt = """以下のテキストから料理レシピの情報のみを抽出し、整形してください。
+
+【指示】
+- 宣伝文、ハッシュタグ、SNSアカウント情報、関連動画リンクなどは除去してください
+- 料理名、材料（分量付き）、作り方（手順）、コツ・ポイントを抽出してください
+- 以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です
+
+{"dish_name": "料理名", "ingredients": ["材料1: 分量", "材料2: 分量"], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
+
+レシピ情報が不十分な場合は、元のテキストから読み取れる情報のみで構成してください。
+
+【入力テキスト】
+""" + raw_recipe_text
+
+            response = model.generate_content(prompt)
+            
+            if not response or not response.text:
+                logging.warning("Gemini returned empty response for recipe refinement")
+                return raw_recipe_text
+            
+            response_text = response.text.strip()
+            
+            # JSON形式でパースを試みる
+            try:
+                # コードブロックを除去
+                if response_text.startswith('```'):
+                    lines = response_text.split('\n')
+                    json_lines = []
+                    in_json = False
+                    for line in lines:
+                        if line.startswith('```json'):
+                            in_json = True
+                            continue
+                        elif line.startswith('```'):
+                            in_json = False
+                            continue
+                        if in_json or (not line.startswith('```')):
+                            json_lines.append(line)
+                    response_text = '\n'.join(json_lines).strip()
+                
+                recipe_json = json.loads(response_text)
+                
+                if 'error' in recipe_json:
+                    logging.warning(f"Gemini recipe refinement error: {recipe_json['error']}")
+                    return raw_recipe_text
+                
+                # JSONをテキスト形式に変換
+                refined_text = self._convert_json_to_text(recipe_json)
+                
+                if refined_text and len(refined_text) > 50:
+                    logging.info("Recipe successfully refined with Gemini")
+                    return refined_text
+                else:
+                    return raw_recipe_text
+                    
+            except json.JSONDecodeError:
+                # JSONパース失敗時は応答テキストをクリーニングして使用
+                cleaned = self._clean_recipe_text(response_text)
+                if cleaned and len(cleaned) > 50:
+                    return cleaned
+                return raw_recipe_text
+                
+        except Exception as e:
+            logging.error(f"Error refining recipe with Gemini: {e}")
+            return raw_recipe_text
     
     def _get_video_download_url_from_apify(self, video_url: str, platform: str) -> Optional[str]:
         """
