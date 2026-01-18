@@ -130,6 +130,24 @@ Preferred communication style: Simple, everyday language.
 - **Fallback**: If Gemini fails or quota exceeded, returns original text unchanged
 - **Model**: `gemini-2.0-flash-exp` (free tier)
 
+### Recipe Refinement Status Tracking (January 2026)
+- **Refinement Status**: API now returns explicit refinement status (`success`, `failed`, `skipped`, `not_applicable`)
+- **Token Tracking**: Gemini API token usage is tracked and returned for description/comment extractions
+- **Improved Prompt**: Enhanced prompt to explicitly exclude:
+  - BGM info, music credits (BGM: ○○, Music by, ♪, 使用音源)
+  - Channel subscription requests, like requests
+  - Sponsor info, PR tags
+  - Camera/editing software info
+  - Comment section invitations
+- **UI Updates**: Test interface now displays:
+  - AI refinement status (成功/失敗/スキップ)
+  - Token usage count
+  - Error message if refinement failed
+- **Response Fields**:
+  - `refinement_status`: success | failed | skipped | not_applicable
+  - `refinement_tokens`: Token count used for refinement (null if not applicable)
+  - `refinement_error`: Error message if refinement failed
+
 ### Security Improvements (October 23, 2025)
 - **API Key Protection**: All API keys stored in environment variables only (never hardcoded)
 - **Git Ignore Configuration**: Added comprehensive `.gitignore` file to prevent accidental exposure of:
