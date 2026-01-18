@@ -600,6 +600,9 @@ class RecipeExtractorTest {
         this.extractionMethodText = document.getElementById('extractionMethodText');
         this.usedModelText = document.getElementById('usedModelText');
         this.tokensUsedText = document.getElementById('tokensUsedText');
+        this.refinementStatusText = document.getElementById('refinementStatusText');
+        this.refinementErrorSection = document.getElementById('refinementErrorSection');
+        this.refinementErrorText = document.getElementById('refinementErrorText');
         this.recipeTextDisplay = document.getElementById('recipeTextDisplay');
         this.clearBtn = document.getElementById('clearRecipeResults');
     }
@@ -716,6 +719,35 @@ class RecipeExtractorTest {
         this.extractionMethodText.textContent = methodLabel;
         this.usedModelText.textContent = result.ai_model || '使用なし';
         this.tokensUsedText.textContent = result.tokens_used ? result.tokens_used.toLocaleString() : '0';
+
+        // Display refinement status
+        const refinementStatusLabels = {
+            'success': '成功',
+            'failed': '失敗',
+            'skipped': 'スキップ'
+        };
+        const refinementStatusColors = {
+            'success': 'text-success',
+            'failed': 'text-danger',
+            'skipped': 'text-muted'
+        };
+        const refinementStatus = result.refinement_status || 'skipped';
+        const statusLabel = refinementStatusLabels[refinementStatus] || refinementStatus;
+        const statusColor = refinementStatusColors[refinementStatus] || 'text-info';
+        
+        if (this.refinementStatusText) {
+            this.refinementStatusText.textContent = statusLabel;
+            this.refinementStatusText.className = statusColor;
+        }
+        
+        if (this.refinementErrorSection && this.refinementErrorText) {
+            if (result.refinement_error && refinementStatus === 'failed') {
+                this.refinementErrorSection.style.display = 'block';
+                this.refinementErrorText.textContent = result.refinement_error;
+            } else {
+                this.refinementErrorSection.style.display = 'none';
+            }
+        }
 
         this.recipeTextDisplay.textContent = result.recipe_text;
 
