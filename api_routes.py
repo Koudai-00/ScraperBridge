@@ -1048,7 +1048,7 @@ def test_extract_recipe():
     Request body:
     {
         "video_url": "https://www.youtube.com/watch?v=...",
-        "model": "gemini-2.0-flash-exp"  // optional
+        "model": "gemini-1.5-flash"  // optional, default: gemini-1.5-flash
     }
     
     Response:
@@ -1056,7 +1056,7 @@ def test_extract_recipe():
         "success": true,
         "recipe_text": "レシピテキスト...",
         "extraction_method": "description|comment|ai_video",
-        "ai_model": "gemini-2.0-flash-exp",
+        "ai_model": "gemini-1.5-flash",
         "tokens_used": 1234
     }
     """
@@ -1070,7 +1070,7 @@ def test_extract_recipe():
             return jsonify({'error': 'Missing video_url field'}), 400
 
         video_url = data['video_url'].strip()
-        model_name = data.get('model', 'gemini-2.0-flash-exp')
+        model_name = data.get('model', 'gemini-1.5-flash')
 
         if not video_url:
             return jsonify({'error': 'video_url cannot be empty'}), 400

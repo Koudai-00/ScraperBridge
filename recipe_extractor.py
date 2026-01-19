@@ -73,35 +73,35 @@ class RecipeExtractor:
         if not video_id:
             raise ValueError("Invalid YouTube URL")
 
-        logging.info("Checking YouTube description for recipe...")
-        description_result = self._get_recipe_from_description(video_id)
+        default_model = 'gemini-1.5-flash'
+        logging.info(f"Checking YouTube description for recipe (using {default_model} for refinement)...")
+        description_result = self._get_recipe_from_description(video_id, default_model)
         if description_result:
             logging.info("Recipe found in description")
             return {
                 'recipe_text': description_result.get('text', ''),
                 'extraction_method': 'description',
-                'ai_model': 'gemini-2.0-flash-exp',
+                'ai_model': description_result.get('model_used', default_model),
                 'tokens_used': description_result.get('refinement_tokens'),
                 'refinement_status': description_result.get('refinement_status', 'skipped'),
                 'refinement_error': description_result.get('refinement_error')
             }
 
-        logging.info("Checking YouTube comments for recipe...")
-        comment_result = self._get_recipe_from_comments(video_id)
+        logging.info(f"Checking YouTube comments for recipe (using {default_model} for refinement)...")
+        comment_result = self._get_recipe_from_comments(video_id, default_model)
         if comment_result:
             logging.info("Recipe found in author's comment")
             return {
                 'recipe_text': comment_result.get('text', ''),
                 'extraction_method': 'comment',
-                'ai_model': 'gemini-2.0-flash-exp',
+                'ai_model': comment_result.get('model_used', default_model),
                 'tokens_used': comment_result.get('refinement_tokens'),
                 'refinement_status': comment_result.get('refinement_status', 'skipped'),
                 'refinement_error': comment_result.get('refinement_error')
             }
 
-        logging.info("Extracting recipe from video using Gemini AI...")
-        # YouTubeも動画解析専用関数を呼び出す
-        return self._extract_recipe_with_gemini(video_url)
+        logging.info(f"Extracting recipe from video using Gemini AI ({default_model})...")
+        return self._extract_recipe_with_gemini_model(video_url, default_model)
 
     def extract_unique_video_id(self, url: str) -> tuple:
         """
@@ -166,8 +166,12 @@ class RecipeExtractor:
             if match: return match.group(1)
         return ""
 
-    def _get_recipe_from_description(self, video_id: str) -> Optional[Dict[str, Any]]:
+    def _get_recipe_from_description(self, video_id: str, model_name: str = 'gemini-1.5-flash') -> Optional[Dict[str, Any]]:
         """YouTube説明欄からレシピを取得
+
+        Args:
+            video_id: YouTube動画ID
+            model_name: 整形に使用するGeminiモデル名
 
         Returns:
             Dict with recipe text and refinement info, or None if no recipe found
@@ -194,8 +198,7 @@ class RecipeExtractor:
             if self._contains_recipe(description):
                 raw_recipe = self._extract_recipe_text(description)
                 if raw_recipe:
-                    # Geminiでレシピを整形
-                    refinement_result = self._refine_recipe_with_gemini(raw_recipe)
+                    refinement_result = self._refine_recipe_with_gemini(raw_recipe, model_name)
                     return refinement_result
                 return None
             return None
@@ -203,8 +206,12 @@ class RecipeExtractor:
             logging.error(f"Error fetching YouTube description: {e}")
             return None
 
-    def _get_recipe_from_comments(self, video_id: str) -> Optional[Dict[str, Any]]:
+    def _get_recipe_from_comments(self, video_id: str, model_name: str = 'gemini-1.5-flash') -> Optional[Dict[str, Any]]:
         """YouTube投稿者コメントからレシピを取得
+
+        Args:
+            video_id: YouTube動画ID
+            model_name: 整形に使用するGeminiモデル名
 
         Returns:
             Dict with recipe text and refinement info, or None if no recipe found
@@ -250,8 +257,7 @@ class RecipeExtractor:
                     if self._contains_recipe(comment_text):
                         raw_recipe = self._extract_recipe_text(comment_text)
                         if raw_recipe:
-                            # Geminiでレシピを整形
-                            refinement_result = self._refine_recipe_with_gemini(raw_recipe)
+                            refinement_result = self._refine_recipe_with_gemini(raw_recipe, model_name)
                             return refinement_result
                         return None
             return None
@@ -327,11 +333,15 @@ class RecipeExtractor:
                         for k in ['【作り方】', '作り方', 'Steps', '手順'])
         return has_ingredients and has_steps
 
-    def _refine_recipe_with_gemini(self, raw_recipe_text: str) -> Dict[str, Any]:
+    def _refine_recipe_with_gemini(self, raw_recipe_text: str, model_name: str = 'gemini-1.5-flash') -> Dict[str, Any]:
         """
-        Gemini 2.0 Flashを使って説明欄/コメントから抽出したレシピを整形する
+        Geminiを使って説明欄/コメントから抽出したレシピを整形する
 
         宣伝文や余計なテキストを除去し、レシピ部分のみを構造化して返す
+
+        Args:
+            raw_recipe_text: 整形前のレシピテキスト
+            model_name: 使用するGeminiモデル名（デフォルト: gemini-1.5-flash）
 
         Returns:
             Dict with keys:
@@ -339,18 +349,20 @@ class RecipeExtractor:
             - refinement_status: 'success', 'failed', 'skipped'
             - refinement_tokens: トークン使用量（整形時のみ）
             - refinement_error: エラーメッセージ（失敗時のみ）
+            - model_used: 実際に使用されたモデル名
         """
         result = {
             'text': raw_recipe_text,
             'refinement_status': 'skipped',
             'refinement_tokens': None,
-            'refinement_error': None
+            'refinement_error': None,
+            'model_used': model_name
         }
 
         try:
             self._ensure_gemini_initialized()
 
-            model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            model = genai.GenerativeModel(model_name)
 
             prompt = """以下のテキストから料理レシピの情報のみを抽出し、整形してください。
 
@@ -535,9 +547,9 @@ class RecipeExtractor:
         return [
             {'id': 'gemini-3-flash-preview', 'name': 'Gemini 3 Flash Preview', 'default': False},
             {'id': 'gemini-2.5-pro', 'name': 'Gemini 2.5 Pro', 'default': False},
-            {'id': 'gemini-2.5-flash', 'name': 'Gemini 2.5 Flash', 'default': True},
+            {'id': 'gemini-2.5-flash', 'name': 'Gemini 2.5 Flash', 'default': False},
             {'id': 'gemini-2.0-flash-exp', 'name': 'Gemini 2.0 Flash Experimental (Free)', 'default': False},
-            {'id': 'gemini-1.5-flash', 'name': 'Gemini 1.5 Flash', 'default': False},
+            {'id': 'gemini-1.5-flash', 'name': 'Gemini 1.5 Flash', 'default': True},
             {'id': 'gemini-1.5-pro', 'name': 'Gemini 1.5 Pro', 'default': False},
         ]
 
@@ -552,7 +564,7 @@ class RecipeExtractor:
         platform = self._detect_platform(video_url)
 
         if model_name is None:
-            model_name = 'gemini-2.0-flash-exp'
+            model_name = 'gemini-1.5-flash'
 
         if platform == "youtube":
             return self._extract_recipe_from_youtube_with_model(video_url, model_name)
@@ -567,27 +579,27 @@ class RecipeExtractor:
         if not video_id:
             raise ValueError("Invalid YouTube URL")
 
-        logging.info("Checking YouTube description for recipe...")
-        description_result = self._get_recipe_from_description(video_id)
+        logging.info(f"Checking YouTube description for recipe (using {model_name} for refinement)...")
+        description_result = self._get_recipe_from_description(video_id, model_name)
         if description_result:
             logging.info("Recipe found in description")
             return {
                 'recipe_text': description_result.get('text', ''),
                 'extraction_method': 'description',
-                'ai_model': 'gemini-2.0-flash-exp',
+                'ai_model': description_result.get('model_used', model_name),
                 'tokens_used': description_result.get('refinement_tokens'),
                 'refinement_status': description_result.get('refinement_status', 'skipped'),
                 'refinement_error': description_result.get('refinement_error')
             }
 
-        logging.info("Checking YouTube comments for recipe...")
-        comment_result = self._get_recipe_from_comments(video_id)
+        logging.info(f"Checking YouTube comments for recipe (using {model_name} for refinement)...")
+        comment_result = self._get_recipe_from_comments(video_id, model_name)
         if comment_result:
             logging.info("Recipe found in author's comment")
             return {
                 'recipe_text': comment_result.get('text', ''),
                 'extraction_method': 'comment',
-                'ai_model': 'gemini-2.0-flash-exp',
+                'ai_model': comment_result.get('model_used', model_name),
                 'tokens_used': comment_result.get('refinement_tokens'),
                 'refinement_status': comment_result.get('refinement_status', 'skipped'),
                 'refinement_error': comment_result.get('refinement_error')
@@ -598,7 +610,7 @@ class RecipeExtractor:
 
     def _extract_recipe_from_other_platform_with_model(self, video_url: str, platform: str, model_name: str) -> Dict[str, Any]:
         """TikTok/Instagramからレシピを抽出（モデル指定版）"""
-        logging.info(f"Attempting to extract recipe from {platform} description...")
+        logging.info(f"Attempting to extract recipe from {platform} description (using {model_name} for refinement)...")
         try:
             response = self.session.get(video_url, timeout=10)
             response.raise_for_status()
@@ -613,12 +625,11 @@ class RecipeExtractor:
                 raw_recipe = self._extract_recipe_text(description)
                 if raw_recipe:
                     logging.info(f"Recipe found in {platform} description")
-                    # Geminiでレシピを整形
-                    refinement_result = self._refine_recipe_with_gemini(raw_recipe)
+                    refinement_result = self._refine_recipe_with_gemini(raw_recipe, model_name)
                     return {
                         'recipe_text': refinement_result.get('text', ''),
                         'extraction_method': 'description',
-                        'ai_model': 'gemini-2.0-flash-exp',
+                        'ai_model': refinement_result.get('model_used', model_name),
                         'tokens_used': refinement_result.get('refinement_tokens'),
                         'refinement_status': refinement_result.get('refinement_status', 'skipped'),
                         'refinement_error': refinement_result.get('refinement_error')
@@ -835,8 +846,9 @@ class RecipeExtractor:
     def _extract_recipe_from_other_platform(self, video_url: str,
                                             platform: str) -> Dict[str, Any]:
         """TikTok/Instagramからレシピを抽出（説明欄チェック後、動画解析へ）"""
+        default_model = 'gemini-1.5-flash'
         logging.info(
-            f"Attempting to extract recipe from {platform} description...")
+            f"Attempting to extract recipe from {platform} description (using {default_model} for refinement)...")
         try:
             response = self.session.get(video_url, timeout=10)
             response.raise_for_status()
@@ -852,12 +864,11 @@ class RecipeExtractor:
                 raw_recipe = self._extract_recipe_text(description)
                 if raw_recipe:
                     logging.info(f"Recipe found in {platform} description")
-                    # Geminiでレシピを整形
-                    refinement_result = self._refine_recipe_with_gemini(raw_recipe)
+                    refinement_result = self._refine_recipe_with_gemini(raw_recipe, default_model)
                     return {
                         'recipe_text': refinement_result.get('text', ''),
                         'extraction_method': 'description',
-                        'ai_model': 'gemini-2.0-flash-exp',
+                        'ai_model': refinement_result.get('model_used', default_model),
                         'tokens_used': refinement_result.get('refinement_tokens'),
                         'refinement_status': refinement_result.get('refinement_status', 'skipped'),
                         'refinement_error': refinement_result.get('refinement_error')
@@ -867,11 +878,10 @@ class RecipeExtractor:
                 f"Could not fetch {platform} description: {e}. Proceeding with video analysis."
             )
 
-        # 説明欄にレシピがない場合、YouTubeと同様に動画解析を試みる
         logging.info(
-            f"No recipe in {platform} description, attempting video analysis with Gemini..."
+            f"No recipe in {platform} description, attempting video analysis with {default_model}..."
         )
-        return self._extract_recipe_with_gemini(video_url)
+        return self._extract_recipe_with_gemini_model(video_url, default_model)
 
     def _estimate_tokens(self, response) -> int:
         """トークン使用量を推定"""
