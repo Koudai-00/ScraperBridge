@@ -140,19 +140,19 @@ class RecipeExtractor:
         for pattern in patterns:
             match = re.search(pattern, url)
             if match: return match.group(1)
-        
+
         # 短縮URL形式 (vt.tiktok.com/XXXXXX)
         short_url_pattern = r'vt\.tiktok\.com/([A-Za-z0-9]+)'
         match = re.search(short_url_pattern, url)
         if match:
             return match.group(1)
-        
+
         # vm.tiktok.com形式も対応
         vm_pattern = r'vm\.tiktok\.com/([A-Za-z0-9]+)'
         match = re.search(vm_pattern, url)
         if match:
             return match.group(1)
-        
+
         return ""
 
     def _extract_instagram_id(self, url: str) -> str:
@@ -168,7 +168,7 @@ class RecipeExtractor:
 
     def _get_recipe_from_description(self, video_id: str) -> Optional[Dict[str, Any]]:
         """YouTube説明欄からレシピを取得
-        
+
         Returns:
             Dict with recipe text and refinement info, or None if no recipe found
         """
@@ -205,7 +205,7 @@ class RecipeExtractor:
 
     def _get_recipe_from_comments(self, video_id: str) -> Optional[Dict[str, Any]]:
         """YouTube投稿者コメントからレシピを取得
-        
+
         Returns:
             Dict with recipe text and refinement info, or None if no recipe found
         """
@@ -330,9 +330,9 @@ class RecipeExtractor:
     def _refine_recipe_with_gemini(self, raw_recipe_text: str) -> Dict[str, Any]:
         """
         Gemini 2.0 Flashを使って説明欄/コメントから抽出したレシピを整形する
-        
+
         宣伝文や余計なテキストを除去し、レシピ部分のみを構造化して返す
-        
+
         Returns:
             Dict with keys:
             - text: 整形後のレシピテキスト（失敗時は元のテキスト）
@@ -346,12 +346,12 @@ class RecipeExtractor:
             'refinement_tokens': None,
             'refinement_error': None
         }
-        
+
         try:
             self._ensure_gemini_initialized()
-            
+
             model = genai.GenerativeModel('gemini-2.0-flash-exp')
-            
+
             prompt = """以下のテキストから料理レシピの情報のみを抽出し、整形してください。
 
 【除去する情報】
@@ -379,21 +379,21 @@ class RecipeExtractor:
 """ + raw_recipe_text
 
             response = model.generate_content(prompt)
-            
+
             if not response or not response.text:
                 logging.warning("Gemini returned empty response for recipe refinement")
                 result['refinement_status'] = 'failed'
                 result['refinement_error'] = 'Empty response from Gemini'
                 return result
-            
+
             # トークン使用量を取得
             tokens_used = None
             if hasattr(response, 'usage_metadata') and response.usage_metadata:
                 tokens_used = getattr(response.usage_metadata, 'total_token_count', None)
             result['refinement_tokens'] = tokens_used
-            
+
             response_text = response.text.strip()
-            
+
             # JSON形式でパースを試みる
             try:
                 # コードブロックを除去
@@ -411,18 +411,18 @@ class RecipeExtractor:
                         if in_json or (not line.startswith('```')):
                             json_lines.append(line)
                     response_text = '\n'.join(json_lines).strip()
-                
+
                 recipe_json = json.loads(response_text)
-                
+
                 if 'error' in recipe_json:
                     logging.warning(f"Gemini recipe refinement error: {recipe_json['error']}")
                     result['refinement_status'] = 'failed'
                     result['refinement_error'] = recipe_json['error']
                     return result
-                
+
                 # JSONをテキスト形式に変換
                 refined_text = self._convert_json_to_text(recipe_json)
-                
+
                 if refined_text and len(refined_text) > 50:
                     logging.info("Recipe successfully refined with Gemini")
                     result['text'] = refined_text
@@ -432,7 +432,7 @@ class RecipeExtractor:
                     result['refinement_status'] = 'failed'
                     result['refinement_error'] = 'Refined text too short'
                     return result
-                    
+
             except json.JSONDecodeError:
                 # JSONパース失敗時は応答テキストをクリーニングして使用
                 cleaned = self._clean_recipe_text(response_text)
@@ -443,29 +443,29 @@ class RecipeExtractor:
                 result['refinement_status'] = 'failed'
                 result['refinement_error'] = 'JSON parse failed and cleaned text too short'
                 return result
-                
+
         except Exception as e:
             error_msg = str(e)
             logging.error(f"Error refining recipe with Gemini: {error_msg}")
             result['refinement_status'] = 'failed'
             result['refinement_error'] = error_msg
             return result
-    
+
     def _get_video_download_url_from_apify(self, video_url: str, platform: str) -> Optional[str]:
         """
         Apify APIを使ってTikTok/Instagram動画のダウンロードURLを取得
-        
+
         Args:
             video_url: 動画のURL
             platform: 'tiktok' または 'instagram'
-            
+
         Returns:
             動画のダウンロードURL、取得失敗時はNone
         """
         if not self.apify_api_token:
             logging.error("APIFY_API_TOKEN is not set")
             return None
-        
+
         try:
             # プラットフォームに応じたApify Actorとパラメータを設定
             if platform == 'tiktok':
@@ -477,27 +477,27 @@ class RecipeExtractor:
             else:
                 logging.error(f"Unsupported platform for Apify: {platform}")
                 return None
-            
+
             # Apify APIエンドポイント（トークンをクエリパラメータで渡す）
             api_url = f"https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items?token={self.apify_api_token}"
-            
+
             headers = {
                 'Content-Type': 'application/json'
             }
-            
+
             logging.info(f"Requesting video download URL from Apify for {platform}...")
             logging.debug(f"Apify request payload: {payload}")
-            
+
             response = requests.post(api_url, headers=headers, json=payload, timeout=120)
             response.raise_for_status()
-            
+
             data = response.json()
             logging.debug(f"Apify response data: {data}")
-            
+
             # レスポンスから動画URLを抽出
             if data and len(data) > 0:
                 item = data[0]
-                
+
                 if platform == 'tiktok':
                     # TikTokの場合、複数の可能性のあるフィールドをチェック
                     download_url = (item.get('videoUrl') or 
@@ -508,16 +508,16 @@ class RecipeExtractor:
                     download_url = (item.get('videoUrl') or 
                                   item.get('displayUrl') or
                                   item.get('url'))
-                
+
                 if download_url:
                     logging.info(f"Successfully got download URL from Apify: {download_url[:100]}...")
                     return download_url
                 else:
                     logging.warning(f"No download URL found in Apify response. Item keys: {list(item.keys())}")
-            
+
             logging.warning(f"Could not extract download URL from Apify response for {platform}")
             return None
-            
+
         except Exception as e:
             logging.error(f"Error getting video download URL from Apify: {e}")
             return None
@@ -544,16 +544,16 @@ class RecipeExtractor:
     def extract_recipe_with_model(self, video_url: str, model_name: str = None) -> Dict[str, Any]:
         """
         テスト用: 指定されたモデルでレシピを抽出
-        
+
         Args:
             video_url: 動画URL
             model_name: 使用するGeminiモデル名（Noneの場合はデフォルト）
         """
         platform = self._detect_platform(video_url)
-        
+
         if model_name is None:
             model_name = 'gemini-2.0-flash-exp'
-        
+
         if platform == "youtube":
             return self._extract_recipe_from_youtube_with_model(video_url, model_name)
         elif platform in ["tiktok", "instagram"]:
@@ -635,9 +635,9 @@ class RecipeExtractor:
         video_file = None
         try:
             self._ensure_gemini_initialized()
-            
+
             platform = self._detect_platform(video_url)
-            
+
             download_url = video_url
             if platform in ['tiktok', 'instagram']:
                 logging.info(f"Detected {platform}, using Apify to get download URL...")
@@ -647,7 +647,7 @@ class RecipeExtractor:
                     logging.info(f"Using Apify download URL for {platform}")
                 else:
                     logging.warning(f"Failed to get download URL from Apify for {platform}, trying direct download")
-            
+
             logging.info(f"Downloading video from URL: {download_url}")
             ydl_opts = {
                 'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
@@ -731,9 +731,9 @@ class RecipeExtractor:
         video_file = None
         try:
             self._ensure_gemini_initialized()
-            
+
             platform = self._detect_platform(video_url)
-            
+
             download_url = video_url
             if platform in ['tiktok', 'instagram']:
                 logging.info(f"Detected {platform}, using Apify to get download URL...")
@@ -743,7 +743,7 @@ class RecipeExtractor:
                     logging.info(f"Using Apify download URL for {platform}")
                 else:
                     logging.warning(f"Failed to get download URL from Apify for {platform}, trying direct download")
-            
+
             logging.info(f"Downloading video from URL: {download_url}")
             ydl_opts = {
                 'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
