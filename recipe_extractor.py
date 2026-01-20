@@ -1043,48 +1043,26 @@ class RecipeExtractor:
         return result
 
     def _extract_recipe_with_openrouter_video(self, video_url: str, model_name: str = None) -> Dict[str, Any]:
-        """OpenRouter APIを使って動画からレシピを抽出（Base64エンコード）"""
-        temp_video_path = None
+        """OpenRouter APIを使って動画からレシピを抽出（URLベース）"""
         try:
             platform = self._detect_platform(video_url)
             
-            download_url = video_url
-            if platform in ['tiktok', 'instagram']:
+            direct_video_url = None
+            if platform == 'youtube':
+                direct_video_url = self._get_youtube_direct_url(video_url)
+            elif platform in ['tiktok', 'instagram']:
                 logging.info(f"Detected {platform}, using Apify to get download URL...")
-                apify_download_url = self._get_video_download_url_from_apify(video_url, platform)
-                if apify_download_url:
-                    download_url = apify_download_url
-                    logging.info(f"Using Apify download URL for {platform}")
-                else:
-                    logging.warning(f"Failed to get download URL from Apify for {platform}, trying direct download")
+                direct_video_url = self._get_video_download_url_from_apify(video_url, platform)
             
-            logging.info(f"Downloading video from URL: {download_url}")
-            ydl_opts = {
-                'format': 'best[ext=mp4][height<=480]/best[ext=mp4][height<=720]/best[ext=mp4]/best',
-                'outtmpl': 'temp_video_%(id)s.%(ext)s',
-                'quiet': True,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android', 'ios'],
-                    }
-                },
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                },
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(download_url, download=True)
-                temp_video_path = ydl.prepare_filename(info_dict)
+            if not direct_video_url:
+                return {
+                    'success': False,
+                    'recipe_text': None,
+                    'extraction_method': 'video_analysis',
+                    'error': f'Could not get direct video URL for {platform}',
+                }
             
-            if not temp_video_path or not os.path.exists(temp_video_path):
-                raise FileNotFoundError("Failed to download the video file.")
-            logging.info(f"Video downloaded to: {temp_video_path}")
-            
-            file_size = os.path.getsize(temp_video_path)
-            logging.info(f"Video file size: {file_size / 1024 / 1024:.2f} MB")
-            
-            if file_size > 20 * 1024 * 1024:
-                logging.warning(f"Video file is large ({file_size / 1024 / 1024:.2f} MB), may take longer to process")
+            logging.info(f"Got direct video URL for {platform}")
             
             models_to_try = None
             if model_name and self._is_openrouter_model(model_name):
@@ -1099,8 +1077,8 @@ class RecipeExtractor:
                 models_to_try = VIDEO_CAPABLE_MODELS
                 logging.info(f"Using default VIDEO_CAPABLE_MODELS with fallback")
             
-            logging.info(f"Sending video to OpenRouter for analysis...")
-            result = openrouter_client.extract_recipe_from_video(temp_video_path, models_to_try)
+            logging.info(f"Sending video URL to OpenRouter for analysis...")
+            result = openrouter_client.extract_recipe_from_video_url(direct_video_url, models_to_try)
             
             if result.get('success'):
                 content = result.get('content', '')
@@ -1152,13 +1130,37 @@ class RecipeExtractor:
                 'extraction_method': 'video_analysis',
                 'error': str(e),
             }
-        finally:
-            if temp_video_path and os.path.exists(temp_video_path):
-                try:
-                    os.remove(temp_video_path)
-                    logging.info(f"Deleted temp local file: {temp_video_path}")
-                except Exception as e:
-                    logging.warning(f"Could not delete temp video: {e}")
+
+    def _get_youtube_direct_url(self, video_url: str) -> Optional[str]:
+        """YouTubeから直接ダウンロードURLを取得"""
+        try:
+            ydl_opts = {
+                'format': 'best[ext=mp4][height<=480]/best[ext=mp4][height<=720]/best[ext=mp4]/best',
+                'quiet': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'ios'],
+                    }
+                },
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                },
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(video_url, download=False)
+                if info_dict and 'url' in info_dict:
+                    logging.info(f"Got YouTube direct URL")
+                    return info_dict['url']
+                elif info_dict and 'formats' in info_dict:
+                    for fmt in reversed(info_dict['formats']):
+                        if fmt.get('url') and fmt.get('ext') == 'mp4':
+                            logging.info(f"Got YouTube direct URL from formats")
+                            return fmt['url']
+            logging.warning("Could not extract direct URL from YouTube")
+            return None
+        except Exception as e:
+            logging.error(f"Error getting YouTube direct URL: {e}")
+            return None
 
     def _extract_recipe_with_gemini_model(self, video_url: str, model_name: str) -> Dict[str, Any]:
         """Gemini APIを使って動画からレシピを抽出（モデル指定版）- 非推奨、OpenRouterを使用してください"""

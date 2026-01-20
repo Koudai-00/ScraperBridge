@@ -297,16 +297,16 @@ class OpenRouterClient:
         models = [model] if model else TEXT_MODELS
         return self.chat_completion(messages, models, max_tokens=4096, temperature=0.3)
     
-    def analyze_video(self, video_path: str, prompt: str, 
-                      models: Optional[List[str]] = None,
-                      max_tokens: int = 4096,
-                      temperature: float = 0.7) -> Dict[str, Any]:
+    def analyze_video_url(self, video_url: str, prompt: str, 
+                          models: Optional[List[str]] = None,
+                          max_tokens: int = 4096,
+                          temperature: float = 0.7) -> Dict[str, Any]:
         """
-        Analyze a video file using OpenRouter's video-capable models.
-        Video is sent as Base64 encoded data URL.
+        Analyze a video using OpenRouter's video-capable models.
+        Video is sent as a URL (not Base64 encoded).
         
         Args:
-            video_path: Path to the local video file
+            video_url: Direct URL to the video file
             prompt: Text prompt describing what to analyze
             models: List of video-capable models to try. Defaults to VIDEO_CAPABLE_MODELS.
             max_tokens: Maximum tokens in response
@@ -321,33 +321,7 @@ class OpenRouterClient:
         if models is None:
             models = VIDEO_CAPABLE_MODELS
         
-        try:
-            with open(video_path, 'rb') as f:
-                video_data = f.read()
-            base64_video = base64.b64encode(video_data).decode('utf-8')
-            
-            ext = video_path.split('.')[-1].lower()
-            mime_types = {
-                'mp4': 'video/mp4',
-                'mpeg': 'video/mpeg',
-                'mov': 'video/mov',
-                'webm': 'video/webm',
-            }
-            mime_type = mime_types.get(ext, 'video/mp4')
-            
-            video_data_url = f"data:{mime_type};base64,{base64_video}"
-            
-            logging.info(f"Video file encoded to Base64 (size: {len(base64_video)} chars)")
-            
-        except Exception as e:
-            logging.error(f"Failed to encode video file: {e}")
-            return {
-                "success": False,
-                "content": None,
-                "model_used": None,
-                "error": f"Failed to encode video: {str(e)}",
-                "tokens_used": 0,
-            }
+        logging.info(f"Sending video URL to OpenRouter: {video_url[:100]}...")
         
         messages = [
             {
@@ -360,7 +334,7 @@ class OpenRouterClient:
                     {
                         "type": "video_url",
                         "video_url": {
-                            "url": video_data_url
+                            "url": video_url
                         }
                     }
                 ]
@@ -436,13 +410,14 @@ class OpenRouterClient:
             "needs_translation": False,
         }
     
-    def extract_recipe_from_video(self, video_path: str, 
-                                   models: Optional[List[str]] = None) -> Dict[str, Any]:
+    def extract_recipe_from_video_url(self, video_url: str, 
+                                       models: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Extract recipe information from a cooking video using OpenRouter.
+        Video is accessed via URL (not downloaded).
         
         Args:
-            video_path: Path to the local video file
+            video_url: Direct URL to the video file
             models: List of video-capable models to try
             
         Returns:
@@ -466,7 +441,7 @@ class OpenRouterClient:
 - 調理のコツやポイントがあれば tips に含める
 - 余計な説明は不要、JSON形式のみ返す"""
 
-        result = self.analyze_video(video_path, prompt, models, max_tokens=4096, temperature=0.3)
+        result = self.analyze_video_url(video_url, prompt, models, max_tokens=4096, temperature=0.3)
         
         if result["success"] and result.get("needs_translation", False):
             logging.info(f"Video analysis model {result['model_used']} needs translation")
