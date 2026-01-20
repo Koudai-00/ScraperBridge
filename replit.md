@@ -61,6 +61,10 @@ Preferred communication style: Simple, everyday language.
 ### APIs and Services
 - **YouTube Data API**: For extracting YouTube video metadata, descriptions, and comments using `YOUTUBE_API_KEY`
 - **Google Gemini API**: AI-powered video analysis for recipe extraction using `GEMINI_API_KEY`
+- **OpenRouter API**: Free AI model access for text refinement using `OPENROUTER_API_KEY`
+  - Text models: DeepSeek Chat V3, Llama 4, Qwen3, Microsoft Phi-4, etc.
+  - Vision models (image only): Qwen 2.5 VL, Molmo, Nemotron VL
+  - Automatic fallback on 429 rate limit errors
 - **Apify API**: Video download URL extraction for TikTok and Instagram using `APIFY_API_TOKEN`
   - TikTok: Uses `clockworks/free-tiktok-scraper` actor
   - Instagram: Uses `apify/instagram-scraper` actor
@@ -194,3 +198,22 @@ Preferred communication style: Simple, everyday language.
   - Invalid file format errors
   - Missing collection data errors
   - Per-URL extraction error tracking
+
+### OpenRouter Integration (January 2026)
+- **New Module**: `openrouter_client.py` - Handles OpenRouter API calls with automatic fallback
+- **Model Support**:
+  - Text models: Use 'openrouter:' prefix (e.g., `openrouter:deepseek/deepseek-chat-v3-0324:free`)
+  - Vision models: Use 'openrouter-vision:' prefix (e.g., `openrouter-vision:qwen/qwen-2.5-vl-7b-instruct:free`)
+- **Automatic Fallback**: On 429 rate limit errors, automatically tries next model in priority list
+- **Model Priority (Text)**:
+  1. deepseek/deepseek-chat-v3-0324:free
+  2. deepseek/deepseek-r1-0528:free
+  3. google/gemini-2.0-flash-exp:free
+  4. meta-llama/llama-4-maverick:free
+  5. qwen/qwen3-235b-a22b:free
+  6. microsoft/phi-4:free
+  7. (30+ more models)
+- **Japanese Translation**: Models that return English responses are automatically translated using OpenRouter's translation models
+- **Video Analysis Limitation**: OpenRouter doesn't support video upload - automatically falls back to Gemini 2.0 Flash for video analysis
+- **UI Updates**: Model selector now shows Gemini and OpenRouter models in separate groups
+- **Environment Variable**: `OPENROUTER_API_KEY` required for OpenRouter functionality
