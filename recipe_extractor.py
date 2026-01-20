@@ -713,6 +713,14 @@ class RecipeExtractor:
                 'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
                 'outtmpl': 'temp_video_%(id)s.%(ext)s',
                 'quiet': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'ios'],
+                    }
+                },
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                },
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info_dict = ydl.extract_info(download_url, download=True)
@@ -809,6 +817,14 @@ class RecipeExtractor:
                 'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
                 'outtmpl': 'temp_video_%(id)s.%(ext)s',
                 'quiet': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'ios'],
+                    }
+                },
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                },
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info_dict = ydl.extract_info(download_url, download=True)
