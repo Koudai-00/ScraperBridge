@@ -18,31 +18,32 @@ from typing import Dict, Any, List, Optional
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# ① 日本語対応可能モデル（gemma-3-27b-itを除く9個）
+# ① 日本語対応可能モデル（10個）
 JAPANESE_CAPABLE_MODELS = [
-    "nousresearch/hermes-3-llama-3.1-405b:free",
-    "meta-llama/llama-3.1-405b-instruct:free",
-    "google/gemini-2.0-flash-exp:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "z-ai/glm-4.5-air:free",
-    "deepseek/deepseek-r1-0528:free",
-    "qwen/qwen3-next-80b-a3b-instruct:free",
-    "mistralai/mistral-small-3.1-24b-instruct:free",
-    "meta-llama/llama-3.2-3b-instruct:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",  # 1位
+    "meta-llama/llama-3.1-405b-instruct:free",    # 2位
+    "google/gemini-2.0-flash-exp:free",            # 3位
+    "meta-llama/llama-3.3-70b-instruct:free",     # 4位
+    "z-ai/glm-4.5-air:free",                       # 5位
+    "deepseek/deepseek-r1-0528:free",              # 6位
+    "google/gemma-3-27b-it:free",                  # 7位
+    "qwen/qwen3-next-80b-a3b-instruct:free",      # 8位
+    "mistralai/mistral-small-3.1-24b-instruct:free",  # 9位
+    "meta-llama/llama-3.2-3b-instruct:free",      # 10位
 ]
 
-# ② 動画解析可能モデル（gemma-3-27b-itとgemini-2.0-flash-expを除く）
-# Note: gemini-2.0-flash-exp is already in ①, gemma-3-27b-it is reserved for translation
+# ② 動画解析可能モデル（6個）
 VIDEO_CAPABLE_MODELS = [
-    "qwen/qwen-2.5-vl-7b-instruct:free",
-    "allenai/molmo-2-8b:free",
-    "nvidia/nemotron-nano-12b-v2-vl:free",
+    "google/gemini-2.0-flash-exp:free",            # ①
+    "google/gemma-3-27b-it:free",                  # ②
+    "qwen/qwen-2.5-vl-7b-instruct:free",          # ③
+    "google/gemma-3-12b-it:free",                  # ④
+    "allenai/molmo-2-8b:free",                     # ⑤
+    "nvidia/nemotron-nano-12b-v2-vl:free",        # ⑥
 ]
 
-# ③ その他のモデル（日本語対応が弱い）
+# ③ その他のモデル（日本語対応が弱い - 上記に該当しなかったモデル）
 OTHER_MODELS = [
-    "google/gemma-3-12b-it:free",
-    "google/gemma-3-4b-it:free",
     "qwen/qwen3-coder:free",
     "moonshotai/kimi-k2:free",
     "qwen/qwen3-4b:free",
@@ -62,22 +63,19 @@ OTHER_MODELS = [
 ]
 
 # ④ 翻訳用予約（最後に配置）
-TRANSLATION_MODEL = "google/gemma-3-27b-it:free"
+TRANSLATION_MODEL = "google/gemma-3-4b-it:free"
 
 # 統合モデルリスト（優先順位順）: ①日本語対応 → ②動画解析 → ③その他 → ④翻訳用
 TEXT_MODELS = JAPANESE_CAPABLE_MODELS + VIDEO_CAPABLE_MODELS + OTHER_MODELS + [TRANSLATION_MODEL]
 
-# ビジョンモデル（画像解析用）
-VISION_MODELS = [
-    "google/gemini-2.0-flash-exp:free",
-    "qwen/qwen-2.5-vl-7b-instruct:free",
-    "allenai/molmo-2-8b:free",
-    "nvidia/nemotron-nano-12b-v2-vl:free",
-    # gemma-3-27b-itは翻訳専用のため除外
-]
+# ビジョンモデル（画像解析用）= 動画解析モデルと同じ
+VISION_MODELS = VIDEO_CAPABLE_MODELS.copy()
 
 # 翻訳が必要なモデル（日本語対応モデル以外すべて）
-MODELS_NEEDING_TRANSLATION = VIDEO_CAPABLE_MODELS + OTHER_MODELS
+# 動画解析モデルのうち日本語対応に含まれないもの + その他のモデル
+MODELS_NEEDING_TRANSLATION = [
+    m for m in VIDEO_CAPABLE_MODELS if m not in JAPANESE_CAPABLE_MODELS
+] + OTHER_MODELS
 
 # すべてのモデル情報（UI表示用）
 ALL_MODELS_INFO = {
