@@ -69,40 +69,71 @@ class RecipeExtractor:
         return 'unknown'
 
     def _extract_recipe_from_youtube(self, video_url: str) -> Dict[str, Any]:
-        """YouTubeからレシピを抽出"""
+        """YouTubeからレシピを抽出（OpenRouter自動フォールバック対応）"""
         video_id = self._extract_youtube_id(video_url)
         if not video_id:
             raise ValueError("Invalid YouTube URL")
 
-        default_model = 'gemini-1.5-flash'
-        logging.info(f"Checking YouTube description for recipe (using {default_model} for refinement)...")
+        # OpenRouter自動モードを使用（TEXT_MODELSの優先順位で自動フォールバック）
+        default_model = 'openrouter:auto'
+        extraction_flow = []
+        
+        logging.info(f"Checking YouTube description for recipe (using OpenRouter auto mode)...")
+        extraction_flow.append("説明欄をチェック")
         description_result = self._get_recipe_from_description(video_id, default_model)
         if description_result:
-            logging.info("Recipe found in description")
-            return {
-                'recipe_text': description_result.get('text', ''),
-                'extraction_method': 'description',
-                'ai_model': description_result.get('model_used', default_model),
-                'tokens_used': description_result.get('refinement_tokens'),
-                'refinement_status': description_result.get('refinement_status', 'skipped'),
-                'refinement_error': description_result.get('refinement_error')
-            }
+            if description_result.get('refinement_status') == 'no_recipe':
+                logging.info("AI determined no recipe in description")
+                extraction_flow.append("レシピなし")
+            else:
+                logging.info("Recipe found in description")
+                extraction_flow.append("キーワード検出 → AI抽出: 成功")
+                return {
+                    'recipe_text': description_result.get('text', ''),
+                    'extraction_method': 'description',
+                    'extraction_flow': ' → '.join(extraction_flow),
+                    'ai_model': description_result.get('model_used', default_model),
+                    'tokens_used': description_result.get('refinement_tokens'),
+                    'refinement_status': description_result.get('refinement_status', 'skipped'),
+                    'refinement_error': description_result.get('refinement_error')
+                }
+        else:
+            extraction_flow.append("レシピなし")
 
-        logging.info(f"Checking YouTube comments for recipe (using {default_model} for refinement)...")
+        logging.info(f"Checking YouTube comments for recipe (using OpenRouter auto mode)...")
+        extraction_flow.append("コメント欄をチェック")
         comment_result = self._get_recipe_from_comments(video_id, default_model)
         if comment_result:
-            logging.info("Recipe found in author's comment")
-            return {
-                'recipe_text': comment_result.get('text', ''),
-                'extraction_method': 'comment',
-                'ai_model': comment_result.get('model_used', default_model),
-                'tokens_used': comment_result.get('refinement_tokens'),
-                'refinement_status': comment_result.get('refinement_status', 'skipped'),
-                'refinement_error': comment_result.get('refinement_error')
-            }
+            if comment_result.get('refinement_status') == 'no_recipe':
+                logging.info("AI determined no recipe in comment")
+                extraction_flow.append("レシピなし")
+            else:
+                logging.info("Recipe found in author's comment")
+                extraction_flow.append("キーワード検出 → AI抽出: 成功")
+                return {
+                    'recipe_text': comment_result.get('text', ''),
+                    'extraction_method': 'comment',
+                    'extraction_flow': ' → '.join(extraction_flow),
+                    'ai_model': comment_result.get('model_used', default_model),
+                    'tokens_used': comment_result.get('refinement_tokens'),
+                    'refinement_status': comment_result.get('refinement_status', 'skipped'),
+                    'refinement_error': comment_result.get('refinement_error')
+                }
+        else:
+            extraction_flow.append("レシピなし")
 
-        logging.info(f"Extracting recipe from video using Gemini AI ({default_model})...")
-        return self._extract_recipe_with_gemini_model(video_url, default_model)
+        # 動画解析はGeminiを使用（OpenRouterは動画アップロード非対応）
+        video_model = 'gemini-2.0-flash-exp'
+        logging.info(f"Extracting recipe from video using Gemini AI ({video_model})...")
+        extraction_flow.append("動画解析")
+        result = self._extract_recipe_with_gemini_model(video_url, video_model)
+        result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
+        
+        # 翻訳が必要な場合は翻訳
+        if result.get('recipe_text'):
+            result = self._ensure_japanese_response(result)
+        
+        return result
 
     def extract_unique_video_id(self, url: str) -> tuple:
         """
@@ -614,12 +645,98 @@ class RecipeExtractor:
 
         Args:
             raw_recipe_text: 整形前のレシピテキスト
-            model_name: モデル名（'openrouter:xxx'形式ならOpenRouter、それ以外はGemini）
+            model_name: モデル名
+                - 'openrouter:auto': OpenRouter自動フォールバック（TEXT_MODELSの優先順位で）
+                - 'openrouter:xxx'形式: 指定されたOpenRouterモデルを使用
+                - それ以外: Geminiモデルを使用
         """
-        if self._is_openrouter_model(model_name):
+        if model_name == 'openrouter:auto':
+            # 自動モード：TEXT_MODELSの優先順位で自動フォールバック
+            return self._refine_recipe_with_openrouter_auto(raw_recipe_text)
+        elif self._is_openrouter_model(model_name):
             return self._refine_recipe_with_openrouter(raw_recipe_text, model_name)
         else:
             return self._refine_recipe_with_gemini(raw_recipe_text, model_name)
+    
+    def _refine_recipe_with_openrouter_auto(self, raw_recipe_text: str) -> Dict[str, Any]:
+        """
+        OpenRouter自動モードでレシピを整形（TEXT_MODELSの優先順位で自動フォールバック）
+        """
+        try:
+            result = openrouter_client.refine_recipe(raw_recipe_text, model=None)
+            
+            if result.get('success'):
+                content = result.get('content', '')
+                model_used = result.get('model_used', '')
+                tokens_used = result.get('tokens_used', 0)
+                
+                # JSONレスポンスの解析
+                try:
+                    import re
+                    json_text = re.sub(r'^```json\s*|\s*```$', '', content.strip(), flags=re.MULTILINE).strip()
+                    recipe_json = json.loads(json_text)
+                    
+                    if recipe_json.get('no_recipe'):
+                        return {
+                            'text': None,
+                            'model_used': model_used,
+                            'refinement_status': 'no_recipe',
+                            'refinement_tokens': tokens_used,
+                            'refinement_error': None
+                        }
+                    
+                    formatted_text = self._convert_json_to_text(recipe_json)
+                    
+                    # 翻訳が必要な場合
+                    if model_used in MODELS_NEEDING_TRANSLATION or not self._is_japanese_text(formatted_text):
+                        translation_result = openrouter_client.translate_to_japanese(formatted_text)
+                        if translation_result.get('success'):
+                            formatted_text = translation_result.get('content', formatted_text)
+                            tokens_used += translation_result.get('tokens_used', 0)
+                    
+                    return {
+                        'text': formatted_text,
+                        'model_used': model_used,
+                        'refinement_status': 'success',
+                        'refinement_tokens': tokens_used,
+                        'refinement_error': None
+                    }
+                except json.JSONDecodeError:
+                    # JSON解析失敗時はテキストクリーニング
+                    cleaned_text = self._clean_recipe_text(content)
+                    
+                    # 翻訳が必要な場合
+                    if model_used in MODELS_NEEDING_TRANSLATION or not self._is_japanese_text(cleaned_text):
+                        translation_result = openrouter_client.translate_to_japanese(cleaned_text)
+                        if translation_result.get('success'):
+                            cleaned_text = translation_result.get('content', cleaned_text)
+                            tokens_used += translation_result.get('tokens_used', 0)
+                    
+                    return {
+                        'text': cleaned_text,
+                        'model_used': model_used,
+                        'refinement_status': 'success',
+                        'refinement_tokens': tokens_used,
+                        'refinement_error': None
+                    }
+            else:
+                logging.warning(f"OpenRouter auto refinement failed: {result.get('error')}")
+                return {
+                    'text': raw_recipe_text,
+                    'model_used': None,
+                    'refinement_status': 'failed',
+                    'refinement_tokens': 0,
+                    'refinement_error': result.get('error')
+                }
+        except Exception as e:
+            logging.error(f"Error in OpenRouter auto refinement: {e}")
+            return {
+                'text': raw_recipe_text,
+                'model_used': None,
+                'refinement_status': 'failed',
+                'refinement_tokens': 0,
+                'refinement_error': str(e)
+            }
 
     def _get_video_download_url_from_apify(self, video_url: str, platform: str) -> Optional[str]:
         """
@@ -1147,10 +1264,15 @@ class RecipeExtractor:
 
     def _extract_recipe_from_other_platform(self, video_url: str,
                                             platform: str) -> Dict[str, Any]:
-        """TikTok/Instagramからレシピを抽出（説明欄チェック後、動画解析へ）"""
-        default_model = 'gemini-1.5-flash'
+        """TikTok/Instagramからレシピを抽出（OpenRouter自動フォールバック対応）"""
+        platform_name = 'TikTok' if platform == 'tiktok' else 'Instagram'
+        default_model = 'openrouter:auto'
+        extraction_flow = []
+        
         logging.info(
-            f"Attempting to extract recipe from {platform} description (using {default_model} for refinement)...")
+            f"Attempting to extract recipe from {platform} description (using OpenRouter auto mode)...")
+        extraction_flow.append(f"{platform_name}説明欄をチェック")
+        
         try:
             response = self.session.get(video_url, timeout=10)
             response.raise_for_status()
@@ -1165,25 +1287,46 @@ class RecipeExtractor:
                     description, str) and self._contains_recipe(description):
                 raw_recipe = self._extract_recipe_text(description)
                 if raw_recipe:
-                    logging.info(f"Recipe found in {platform} description")
-                    refinement_result = self._refine_recipe_with_gemini(raw_recipe, default_model)
-                    return {
-                        'recipe_text': refinement_result.get('text', ''),
-                        'extraction_method': 'description',
-                        'ai_model': refinement_result.get('model_used', default_model),
-                        'tokens_used': refinement_result.get('refinement_tokens'),
-                        'refinement_status': refinement_result.get('refinement_status', 'skipped'),
-                        'refinement_error': refinement_result.get('refinement_error')
-                    }
+                    refinement_result = self._refine_recipe_with_model(raw_recipe, default_model)
+                    
+                    if refinement_result.get('refinement_status') == 'no_recipe':
+                        logging.info(f"AI determined no recipe in {platform} description")
+                        extraction_flow.append("キーワード検出 → AI判定: レシピなし")
+                    else:
+                        logging.info(f"Recipe found in {platform} description")
+                        extraction_flow.append("キーワード検出 → AI抽出: 成功")
+                        return {
+                            'recipe_text': refinement_result.get('text', ''),
+                            'extraction_method': 'description',
+                            'extraction_flow': ' → '.join(extraction_flow),
+                            'ai_model': refinement_result.get('model_used', default_model),
+                            'tokens_used': refinement_result.get('refinement_tokens'),
+                            'refinement_status': refinement_result.get('refinement_status', 'skipped'),
+                            'refinement_error': refinement_result.get('refinement_error')
+                        }
+            else:
+                extraction_flow.append("キーワードなし")
         except Exception as e:
             logging.warning(
                 f"Could not fetch {platform} description: {e}. Proceeding with video analysis."
             )
+            extraction_flow.append("取得失敗")
 
+        # 動画解析はGeminiを使用（OpenRouterは動画アップロード非対応）
+        video_model = 'gemini-2.0-flash-exp'
         logging.info(
-            f"No recipe in {platform} description, attempting video analysis with {default_model}..."
+            f"No recipe in {platform} description, attempting video analysis with {video_model}..."
         )
-        return self._extract_recipe_with_gemini_model(video_url, default_model)
+        extraction_flow.append("動画解析")
+        
+        result = self._extract_recipe_with_gemini_model(video_url, video_model)
+        result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
+        
+        # 翻訳が必要な場合は翻訳
+        if result.get('recipe_text'):
+            result = self._ensure_japanese_response(result)
+        
+        return result
 
     def _estimate_tokens(self, response) -> int:
         """トークン使用量を推定"""
