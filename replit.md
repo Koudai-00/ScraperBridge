@@ -202,17 +202,21 @@ Preferred communication style: Simple, everyday language.
 ### OpenRouter Integration (January 2026)
 - **New Module**: `openrouter_client.py` - Handles OpenRouter API calls with automatic fallback
 - **Model Support**:
-  - Text models: Use 'openrouter:' prefix (e.g., `openrouter:deepseek/deepseek-chat-v3-0324:free`)
+  - Text models: Use 'openrouter:' prefix (e.g., `openrouter:nousresearch/hermes-3-llama-3.1-405b:free`)
   - Vision models: Use 'openrouter-vision:' prefix (e.g., `openrouter-vision:qwen/qwen-2.5-vl-7b-instruct:free`)
   - Auto mode: Use 'openrouter:auto' for automatic model selection with fallback
 - **Automatic Fallback**: On 429 rate limit errors, automatically tries next model in priority list
 - **Model Priority (4-Tier System)**:
-  1. **Japanese-Capable Models (9)**: DeepSeek Chat V3, DeepSeek R1, Gemini 2.0 Flash, Llama 4 Maverick/Scout, Qwen3 235B/30B, Phi-4/Phi-4 Multimodal
-  2. **Video-Capable Models (4)**: Qwen 2.5 VL, Molmo 2, Nemotron VL, Kimi VL
-  3. **Other Models (15+)**: OlympicCoder, Llama 3.3/3.1, Mistral, Hermes, UI TARS, etc.
-  4. **Translation Reserved**: google/gemma-3-27b-it:free (reserved exclusively for translation)
+  1. **Japanese-Capable Models (10)**: 
+     - 1位: Hermes 3 Llama 405B, 2位: Llama 3.1 405B, 3位: Gemini 2.0 Flash
+     - 4位: Llama 3.3 70B, 5位: GLM 4.5 Air, 6位: DeepSeek R1
+     - 7位: Gemma 3 27B, 8位: Qwen3 Next 80B, 9位: Mistral Small 3.1 24B, 10位: Llama 3.2 3B
+  2. **Video-Capable Models (6)**: 
+     - ①Gemini 2.0 Flash, ②Gemma 3 27B, ③Qwen 2.5 VL, ④Gemma 3 12B, ⑤Molmo 2, ⑥Nemotron VL
+  3. **Other Models (16+)**: Qwen3 Coder, Kimi K2, GPT OSS 120B/20B, etc. (日本語対応が弱い)
+  4. **Translation Reserved**: google/gemma-3-4b-it:free (翻訳専用)
 - **Translation Logic**: 
-  - Video-capable and other models auto-translate to Japanese via gemma-3-27b-it
+  - Video-capable and other models auto-translate to Japanese via gemma-3-4b-it
   - Translation model is protected from regular recipe extraction to ensure availability
 - **App API Default**: Uses 'openrouter:auto' mode for description/comment extraction
 - **Video Analysis**: Still uses Gemini 2.0 Flash (OpenRouter doesn't support video upload)
