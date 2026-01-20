@@ -9,7 +9,7 @@ import google.generativeai as genai
 from bs4 import BeautifulSoup
 import pathlib
 import yt_dlp
-from openrouter_client import openrouter_client, TEXT_MODELS, VISION_MODELS, MODELS_NEEDING_TRANSLATION
+from openrouter_client import openrouter_client, TEXT_MODELS, VISION_MODELS, VIDEO_CAPABLE_MODELS, MODELS_NEEDING_TRANSLATION
 
 
 class RecipeExtractor:
@@ -973,19 +973,15 @@ class RecipeExtractor:
         logging.info(f"Extracting recipe from video using AI ({model_name})...")
         extraction_flow.append("動画解析")
         
-        # OpenRouter models don't support video upload, fall back to Gemini
-        video_model = model_name
-        if self._is_openrouter_model(model_name):
-            video_model = 'gemini-2.0-flash-exp'  # Use free Gemini for video
-            logging.info(f"OpenRouter doesn't support video, using {video_model} for video analysis")
-            extraction_flow.append(f"OpenRouter→Gemini切替")
+        # OpenRouterのBase64動画解析を使用
+        result = self._extract_recipe_with_openrouter_video(video_url, model_name)
         
-        result = self._extract_recipe_with_gemini_model(video_url, video_model)
-        result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
-        
-        # If non-Japanese response from certain models, translate
-        if result.get('recipe_text'):
-            result = self._ensure_japanese_response(result)
+        if result.get('success'):
+            extraction_flow.append("抽出成功")
+            result['extraction_flow'] = ' → '.join(extraction_flow)
+        else:
+            extraction_flow.append(f"失敗: {result.get('error', 'unknown')}")
+            result['extraction_flow'] = ' → '.join(extraction_flow)
         
         return result
 
@@ -1036,23 +1032,134 @@ class RecipeExtractor:
         logging.info(f"No recipe in {platform} description, attempting video analysis with {model_name}...")
         extraction_flow.append("動画解析")
         
-        # OpenRouter models don't support video upload, fall back to Gemini
-        video_model = model_name
-        if self._is_openrouter_model(model_name):
-            video_model = 'gemini-2.0-flash-exp'
-            logging.info(f"OpenRouter doesn't support video, using {video_model} for video analysis")
-            extraction_flow.append(f"OpenRouter→Gemini切替")
+        # OpenRouterのBase64動画解析を使用
+        result = self._extract_recipe_with_openrouter_video(video_url, model_name)
         
-        result = self._extract_recipe_with_gemini_model(video_url, video_model)
-        result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
-        
-        if result.get('recipe_text'):
-            result = self._ensure_japanese_response(result)
+        if result.get('success'):
+            extraction_flow.append("抽出成功")
+            result['extraction_flow'] = ' → '.join(extraction_flow)
+        else:
+            extraction_flow.append(f"失敗: {result.get('error', 'unknown')}")
+            result['extraction_flow'] = ' → '.join(extraction_flow)
         
         return result
 
+    def _extract_recipe_with_openrouter_video(self, video_url: str, model_name: str = None) -> Dict[str, Any]:
+        """OpenRouter APIを使って動画からレシピを抽出（Base64エンコード）"""
+        temp_video_path = None
+        try:
+            platform = self._detect_platform(video_url)
+            
+            download_url = video_url
+            if platform in ['tiktok', 'instagram']:
+                logging.info(f"Detected {platform}, using Apify to get download URL...")
+                apify_download_url = self._get_video_download_url_from_apify(video_url, platform)
+                if apify_download_url:
+                    download_url = apify_download_url
+                    logging.info(f"Using Apify download URL for {platform}")
+                else:
+                    logging.warning(f"Failed to get download URL from Apify for {platform}, trying direct download")
+            
+            logging.info(f"Downloading video from URL: {download_url}")
+            ydl_opts = {
+                'format': 'best[ext=mp4][height<=480]/best[ext=mp4][height<=720]/best[ext=mp4]/best',
+                'outtmpl': 'temp_video_%(id)s.%(ext)s',
+                'quiet': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'ios'],
+                    }
+                },
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                },
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(download_url, download=True)
+                temp_video_path = ydl.prepare_filename(info_dict)
+            
+            if not temp_video_path or not os.path.exists(temp_video_path):
+                raise FileNotFoundError("Failed to download the video file.")
+            logging.info(f"Video downloaded to: {temp_video_path}")
+            
+            file_size = os.path.getsize(temp_video_path)
+            logging.info(f"Video file size: {file_size / 1024 / 1024:.2f} MB")
+            
+            if file_size > 20 * 1024 * 1024:
+                logging.warning(f"Video file is large ({file_size / 1024 / 1024:.2f} MB), may take longer to process")
+            
+            models_to_try = None
+            if model_name and self._is_openrouter_model(model_name):
+                model_id = model_name.replace('openrouter:', '')
+                models_to_try = [model_id]
+                logging.info(f"Using specified OpenRouter model: {model_id}")
+            else:
+                models_to_try = VIDEO_CAPABLE_MODELS
+                logging.info(f"Using default VIDEO_CAPABLE_MODELS with fallback")
+            
+            logging.info(f"Sending video to OpenRouter for analysis...")
+            result = openrouter_client.extract_recipe_from_video(temp_video_path, models_to_try)
+            
+            if result.get('success'):
+                content = result.get('content', '')
+                
+                recipe_text = None
+                try:
+                    json_text = re.sub(r'^```json\s*|\s*```$', '', content, flags=re.MULTILINE).strip()
+                    recipe_json = json.loads(json_text)
+                    
+                    if recipe_json.get('no_recipe') or recipe_json.get('error'):
+                        raise ValueError("No recipe found in video")
+                    
+                    if not recipe_json.get('ingredients') or not recipe_json.get('steps'):
+                        raise json.JSONDecodeError("Missing required fields", json_text, 0)
+                    
+                    recipe_text = self._convert_json_to_text(recipe_json)
+                    logging.info("Successfully parsed JSON response from OpenRouter")
+                except json.JSONDecodeError:
+                    logging.warning("Failed to parse JSON, using text fallback")
+                    recipe_text = self._clean_recipe_text(content)
+                
+                if not recipe_text or "レシピが見つかりませんでした" in recipe_text:
+                    raise ValueError("No recipe found in video")
+                
+                return {
+                    'success': True,
+                    'recipe_text': recipe_text,
+                    'extraction_method': 'video_analysis',
+                    'ai_model': result.get('model_used', 'openrouter'),
+                    'tokens_used': result.get('tokens_used', 0),
+                    'translated': result.get('translated', False),
+                }
+            else:
+                error_msg = result.get('error', 'Unknown error')
+                logging.error(f"OpenRouter video analysis failed: {error_msg}")
+                return {
+                    'success': False,
+                    'recipe_text': None,
+                    'extraction_method': 'video_analysis',
+                    'error': error_msg,
+                    'ai_model': result.get('model_used'),
+                }
+                
+        except Exception as e:
+            logging.error(f"Error in _extract_recipe_with_openrouter_video: {e}")
+            return {
+                'success': False,
+                'recipe_text': None,
+                'extraction_method': 'video_analysis',
+                'error': str(e),
+            }
+        finally:
+            if temp_video_path and os.path.exists(temp_video_path):
+                try:
+                    os.remove(temp_video_path)
+                    logging.info(f"Deleted temp local file: {temp_video_path}")
+                except Exception as e:
+                    logging.warning(f"Could not delete temp video: {e}")
+
     def _extract_recipe_with_gemini_model(self, video_url: str, model_name: str) -> Dict[str, Any]:
-        """Gemini APIを使って動画からレシピを抽出（モデル指定版）"""
+        """Gemini APIを使って動画からレシピを抽出（モデル指定版）- 非推奨、OpenRouterを使用してください"""
         temp_video_path = None
         video_file = None
         try:

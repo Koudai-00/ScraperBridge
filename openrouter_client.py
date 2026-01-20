@@ -13,6 +13,7 @@ import os
 import logging
 import requests
 import time
+import base64
 from typing import Dict, Any, List, Optional
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -295,6 +296,191 @@ class OpenRouterClient:
         
         models = [model] if model else TEXT_MODELS
         return self.chat_completion(messages, models, max_tokens=4096, temperature=0.3)
+    
+    def analyze_video(self, video_path: str, prompt: str, 
+                      models: Optional[List[str]] = None,
+                      max_tokens: int = 4096,
+                      temperature: float = 0.7) -> Dict[str, Any]:
+        """
+        Analyze a video file using OpenRouter's video-capable models.
+        Video is sent as Base64 encoded data URL.
+        
+        Args:
+            video_path: Path to the local video file
+            prompt: Text prompt describing what to analyze
+            models: List of video-capable models to try. Defaults to VIDEO_CAPABLE_MODELS.
+            max_tokens: Maximum tokens in response
+            temperature: Sampling temperature
+            
+        Returns:
+            Dict with 'content', 'model_used', 'tokens_used', 'success', 'needs_translation'
+        """
+        if not self.api_key:
+            raise ValueError("OPENROUTER_API_KEY not set")
+        
+        if models is None:
+            models = VIDEO_CAPABLE_MODELS
+        
+        try:
+            with open(video_path, 'rb') as f:
+                video_data = f.read()
+            base64_video = base64.b64encode(video_data).decode('utf-8')
+            
+            ext = video_path.split('.')[-1].lower()
+            mime_types = {
+                'mp4': 'video/mp4',
+                'mpeg': 'video/mpeg',
+                'mov': 'video/mov',
+                'webm': 'video/webm',
+            }
+            mime_type = mime_types.get(ext, 'video/mp4')
+            
+            video_data_url = f"data:{mime_type};base64,{base64_video}"
+            
+            logging.info(f"Video file encoded to Base64 (size: {len(base64_video)} chars)")
+            
+        except Exception as e:
+            logging.error(f"Failed to encode video file: {e}")
+            return {
+                "success": False,
+                "content": None,
+                "model_used": None,
+                "error": f"Failed to encode video: {str(e)}",
+                "tokens_used": 0,
+            }
+        
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },
+                    {
+                        "type": "video_url",
+                        "video_url": {
+                            "url": video_data_url
+                        }
+                    }
+                ]
+            }
+        ]
+        
+        last_error = None
+        
+        for model in models:
+            try:
+                logging.info(f"Trying video analysis with OpenRouter model: {model}")
+                
+                payload = {
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                }
+                
+                response = requests.post(
+                    self.base_url,
+                    headers=self.headers,
+                    json=payload,
+                    timeout=180
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    usage = data.get("usage", {})
+                    
+                    needs_translation = model in MODELS_NEEDING_TRANSLATION
+                    
+                    return {
+                        "success": True,
+                        "content": content,
+                        "model_used": model,
+                        "tokens_used": usage.get("total_tokens", 0),
+                        "prompt_tokens": usage.get("prompt_tokens", 0),
+                        "completion_tokens": usage.get("completion_tokens", 0),
+                        "needs_translation": needs_translation,
+                    }
+                elif response.status_code == 429:
+                    logging.warning(f"Rate limited on {model} for video analysis, trying next model...")
+                    last_error = f"Rate limit exceeded for {model}"
+                    time.sleep(0.5)
+                    continue
+                else:
+                    try:
+                        error_data = response.json()
+                        error_msg = error_data.get("error", {}).get("message", response.text)
+                    except:
+                        error_msg = response.text
+                    logging.warning(f"Error from {model} for video: {error_msg}")
+                    last_error = error_msg
+                    continue
+                    
+            except requests.exceptions.Timeout:
+                logging.warning(f"Timeout on {model} for video analysis, trying next model...")
+                last_error = f"Timeout for {model}"
+                continue
+            except Exception as e:
+                logging.warning(f"Exception with {model} for video: {e}")
+                last_error = str(e)
+                continue
+        
+        return {
+            "success": False,
+            "content": None,
+            "model_used": None,
+            "error": last_error or "All video models failed",
+            "tokens_used": 0,
+            "needs_translation": False,
+        }
+    
+    def extract_recipe_from_video(self, video_path: str, 
+                                   models: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Extract recipe information from a cooking video using OpenRouter.
+        
+        Args:
+            video_path: Path to the local video file
+            models: List of video-capable models to try
+            
+        Returns:
+            Dict with recipe content and metadata
+        """
+        prompt = """この料理動画を見て、レシピを抽出してください。
+
+以下の形式でJSON形式で回答してください：
+{
+  "dish_name": "料理名",
+  "ingredients": ["材料1: 分量", "材料2: 分量"],
+  "steps": ["手順1の説明", "手順2の説明"],
+  "tips": ["コツやポイント"]
+}
+
+動画に料理レシピが含まれていない場合は：
+{"no_recipe": true, "reason": "理由"}
+
+重要：
+- 材料は可能な限り分量も含めて記載
+- 手順は時系列順に詳細に記載
+- 調理のコツやポイントがあれば tips に含める
+- 余計な説明は不要、JSON形式のみ返す"""
+
+        result = self.analyze_video(video_path, prompt, models, max_tokens=4096, temperature=0.3)
+        
+        if result["success"] and result.get("needs_translation", False):
+            logging.info(f"Video analysis model {result['model_used']} needs translation")
+            translation_result = self.translate_to_japanese(result["content"])
+            if translation_result["success"]:
+                result["content"] = translation_result["content"]
+                result["translated"] = True
+                result["translation_model"] = translation_result["model_used"]
+            else:
+                logging.warning(f"Translation failed: {translation_result.get('error')}")
+                result["translated"] = False
+        
+        return result
 
 
 openrouter_client = OpenRouterClient()
