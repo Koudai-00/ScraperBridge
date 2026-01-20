@@ -73,7 +73,7 @@ VISION_MODELS = [
     "qwen/qwen-2.5-vl-7b-instruct:free",
     "allenai/molmo-2-8b:free",
     "nvidia/nemotron-nano-12b-v2-vl:free",
-    "google/gemma-3-27b-it:free",  # 最後（翻訳用予約）
+    # gemma-3-27b-itは翻訳専用のため除外
 ]
 
 # 翻訳が必要なモデル（日本語対応モデル以外すべて）

@@ -88,11 +88,13 @@ class RecipeExtractor:
             else:
                 logging.info("Recipe found in description")
                 extraction_flow.append("キーワード検出 → AI抽出: 成功")
+                # 実際に使用されたモデルを報告（Noneの場合は'openrouter:auto'を表示）
+                actual_model = description_result.get('model_used') or 'openrouter:auto'
                 return {
                     'recipe_text': description_result.get('text', ''),
                     'extraction_method': 'description',
                     'extraction_flow': ' → '.join(extraction_flow),
-                    'ai_model': description_result.get('model_used', default_model),
+                    'ai_model': actual_model,
                     'tokens_used': description_result.get('refinement_tokens'),
                     'refinement_status': description_result.get('refinement_status', 'skipped'),
                     'refinement_error': description_result.get('refinement_error')
@@ -110,11 +112,13 @@ class RecipeExtractor:
             else:
                 logging.info("Recipe found in author's comment")
                 extraction_flow.append("キーワード検出 → AI抽出: 成功")
+                # 実際に使用されたモデルを報告（Noneの場合は'openrouter:auto'を表示）
+                actual_model = comment_result.get('model_used') or 'openrouter:auto'
                 return {
                     'recipe_text': comment_result.get('text', ''),
                     'extraction_method': 'comment',
                     'extraction_flow': ' → '.join(extraction_flow),
-                    'ai_model': comment_result.get('model_used', default_model),
+                    'ai_model': actual_model,
                     'tokens_used': comment_result.get('refinement_tokens'),
                     'refinement_status': comment_result.get('refinement_status', 'skipped'),
                     'refinement_error': comment_result.get('refinement_error')
@@ -881,8 +885,12 @@ class RecipeExtractor:
         recipe_text = result.get('recipe_text', '')
         model_used = result.get('ai_model', '')
         
-        or_model_id = self._get_openrouter_model_id(model_used)
-        needs_translation = or_model_id in MODELS_NEEDING_TRANSLATION
+        # 'openrouter:auto'の場合は実際のモデルが不明なので、テキストの言語をチェック
+        if model_used == 'openrouter:auto':
+            needs_translation = not self._is_japanese_text(recipe_text)
+        else:
+            or_model_id = self._get_openrouter_model_id(model_used)
+            needs_translation = or_model_id in MODELS_NEEDING_TRANSLATION
         
         if needs_translation or not self._is_japanese_text(recipe_text):
             logging.info(f"Non-Japanese response detected from {model_used}, translating...")
@@ -1295,11 +1303,13 @@ class RecipeExtractor:
                     else:
                         logging.info(f"Recipe found in {platform} description")
                         extraction_flow.append("キーワード検出 → AI抽出: 成功")
+                        # 実際に使用されたモデルを報告（Noneの場合は'openrouter:auto'を表示）
+                        actual_model = refinement_result.get('model_used') or 'openrouter:auto'
                         return {
                             'recipe_text': refinement_result.get('text', ''),
                             'extraction_method': 'description',
                             'extraction_flow': ' → '.join(extraction_flow),
-                            'ai_model': refinement_result.get('model_used', default_model),
+                            'ai_model': actual_model,
                             'tokens_used': refinement_result.get('refinement_tokens'),
                             'refinement_status': refinement_result.get('refinement_status', 'skipped'),
                             'refinement_error': refinement_result.get('refinement_error')

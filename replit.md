@@ -204,16 +204,17 @@ Preferred communication style: Simple, everyday language.
 - **Model Support**:
   - Text models: Use 'openrouter:' prefix (e.g., `openrouter:deepseek/deepseek-chat-v3-0324:free`)
   - Vision models: Use 'openrouter-vision:' prefix (e.g., `openrouter-vision:qwen/qwen-2.5-vl-7b-instruct:free`)
+  - Auto mode: Use 'openrouter:auto' for automatic model selection with fallback
 - **Automatic Fallback**: On 429 rate limit errors, automatically tries next model in priority list
-- **Model Priority (Text)**:
-  1. deepseek/deepseek-chat-v3-0324:free
-  2. deepseek/deepseek-r1-0528:free
-  3. google/gemini-2.0-flash-exp:free
-  4. meta-llama/llama-4-maverick:free
-  5. qwen/qwen3-235b-a22b:free
-  6. microsoft/phi-4:free
-  7. (30+ more models)
-- **Japanese Translation**: Models that return English responses are automatically translated using OpenRouter's translation models
-- **Video Analysis Limitation**: OpenRouter doesn't support video upload - automatically falls back to Gemini 2.0 Flash for video analysis
-- **UI Updates**: Model selector now shows Gemini and OpenRouter models in separate groups
+- **Model Priority (4-Tier System)**:
+  1. **Japanese-Capable Models (9)**: DeepSeek Chat V3, DeepSeek R1, Gemini 2.0 Flash, Llama 4 Maverick/Scout, Qwen3 235B/30B, Phi-4/Phi-4 Multimodal
+  2. **Video-Capable Models (4)**: Qwen 2.5 VL, Molmo 2, Nemotron VL, Kimi VL
+  3. **Other Models (15+)**: OlympicCoder, Llama 3.3/3.1, Mistral, Hermes, UI TARS, etc.
+  4. **Translation Reserved**: google/gemma-3-27b-it:free (reserved exclusively for translation)
+- **Translation Logic**: 
+  - Video-capable and other models auto-translate to Japanese via gemma-3-27b-it
+  - Translation model is protected from regular recipe extraction to ensure availability
+- **App API Default**: Uses 'openrouter:auto' mode for description/comment extraction
+- **Video Analysis**: Still uses Gemini 2.0 Flash (OpenRouter doesn't support video upload)
+- **UI Updates**: Model selector organized by category with Auto option as default
 - **Environment Variable**: `OPENROUTER_API_KEY` required for OpenRouter functionality
