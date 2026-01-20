@@ -355,10 +355,8 @@ class RecipeExtractor:
         return cleaned.strip()
 
     def _convert_json_to_text(self, recipe_json: Dict[str, Any]) -> str:
-        """JSON形式のレシピをテキスト形式に変換"""
+        """JSON形式のレシピをテキスト形式に変換（料理名は含めない）"""
         parts = []
-        if recipe_json.get('dish_name'):
-            parts.append(f"【料理名】\n{recipe_json['dish_name']}")
         if recipe_json.get('ingredients'):
             parts.append("\n【材料】")
             for i in recipe_json['ingredients']:
@@ -428,7 +426,7 @@ class RecipeExtractor:
 
 【レシピが含まれている場合】
 以下のJSON形式で返してください：
-{"dish_name": "料理名", "ingredients": ["材料1: 分量", "材料2: 分量"], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
+{"ingredients": ["材料1: 分量", "材料2: 分量"], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
 
 ※除去する情報：宣伝文、ハッシュタグ、SNSリンク、BGM情報、チャンネル登録のお願い等
 
@@ -551,7 +549,7 @@ class RecipeExtractor:
 
 【レシピが含まれている場合】
 以下のJSON形式で返してください：
-{"dish_name": "料理名", "ingredients": ["材料1: 分量", "材料2: 分量"], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
+{"ingredients": ["材料1: 分量", "材料2: 分量"], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
 
 ※除去する情報：宣伝文、ハッシュタグ、SNSリンク、BGM情報、チャンネル登録のお願い等
 
@@ -1091,8 +1089,12 @@ class RecipeExtractor:
             models_to_try = None
             if model_name and self._is_openrouter_model(model_name):
                 model_id = model_name.replace('openrouter:', '')
-                models_to_try = [model_id]
-                logging.info(f"Using specified OpenRouter model: {model_id}")
+                if model_id == 'auto':
+                    models_to_try = VIDEO_CAPABLE_MODELS
+                    logging.info(f"Using VIDEO_CAPABLE_MODELS with auto-fallback for video analysis")
+                else:
+                    models_to_try = [model_id]
+                    logging.info(f"Using specified OpenRouter model: {model_id}")
             else:
                 models_to_try = VIDEO_CAPABLE_MODELS
                 logging.info(f"Using default VIDEO_CAPABLE_MODELS with fallback")
@@ -1211,7 +1213,7 @@ class RecipeExtractor:
             model = genai.GenerativeModel(model_name)
             prompt = """
 この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
-{"dish_name": "料理名", "ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}
+{"ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}
 動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。
 """
             logging.info(f"Sending video to Gemini ({model_name})...")
@@ -1318,7 +1320,7 @@ class RecipeExtractor:
             model = genai.GenerativeModel(model_name)
             prompt = """
 この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
-{"dish_name": "料理名", "ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}
+{"ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}
 動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。
 """
             logging.info(f"Sending video to Gemini ({model_name})...")

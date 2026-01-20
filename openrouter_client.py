@@ -286,7 +286,7 @@ class OpenRouterClient:
 {"no_recipe": true}
 
 レシピが含まれている場合は、以下のJSON形式で返してください：
-{"dish_name": "料理名", "ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}"""
+{"ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}"""
             },
             {
                 "role": "user",
@@ -452,7 +452,6 @@ class OpenRouterClient:
 
 以下の形式でJSON形式で回答してください：
 {
-  "dish_name": "料理名",
   "ingredients": ["材料1: 分量", "材料2: 分量"],
   "steps": ["手順1の説明", "手順2の説明"],
   "tips": ["コツやポイント"]
