@@ -196,11 +196,18 @@ class RecipeExtractor:
             description = data['items'][0]['snippet'].get('description', '')
 
             if self._contains_recipe(description):
+                logging.info("Keyword found in description, sending to AI for recipe extraction")
                 raw_recipe = self._extract_recipe_text(description)
                 if raw_recipe:
                     refinement_result = self._refine_recipe_with_gemini(raw_recipe, model_name)
+                    # AIがレシピなしと判定した場合はNoneを返す（動画解析へ移行）
+                    if refinement_result.get('refinement_status') == 'no_recipe':
+                        logging.info("AI determined no recipe in description, will try video analysis")
+                        return None
                     return refinement_result
                 return None
+            else:
+                logging.info("No recipe keywords found in description")
             return None
         except Exception as e:
             logging.error(f"Error fetching YouTube description: {e}")
@@ -255,9 +262,14 @@ class RecipeExtractor:
                 if author_channel_id == channel_id:
                     comment_text = comment.get('textDisplay', '')
                     if self._contains_recipe(comment_text):
+                        logging.info("Keyword found in author comment, sending to AI for recipe extraction")
                         raw_recipe = self._extract_recipe_text(comment_text)
                         if raw_recipe:
                             refinement_result = self._refine_recipe_with_gemini(raw_recipe, model_name)
+                            # AIがレシピなしと判定した場合はNoneを返す（動画解析へ移行）
+                            if refinement_result.get('refinement_status') == 'no_recipe':
+                                logging.info("AI determined no recipe in comment, will try video analysis")
+                                return None
                             return refinement_result
                         return None
             return None
@@ -266,15 +278,15 @@ class RecipeExtractor:
             return None
 
     def _contains_recipe(self, text: str) -> bool:
-        """テキストにレシピが含まれているか判定"""
+        """テキストにレシピキーワードが含まれているか判定
+        
+        キーワードが1つでも含まれていればTrue（AI抽出へ進む）
+        """
         recipe_keywords = [
-            '材料', 'レシピ', '作り方', '手順', 'ingredients', 'recipe', '調味料', '分量',
-            'g', 'ml', 'cc', '大さじ', '小さじ', '①', '②', '1.', '2.', '・'
+            '材料', '作り方', '手順', '分量', 'ml', 'cc', '大さじ', '小さじ'
         ]
         text_lower = text.lower()
-        keyword_count = sum(1 for k in recipe_keywords
-                            if k.lower() in text_lower)
-        return keyword_count >= 3
+        return any(k.lower() in text_lower for k in recipe_keywords)
 
     def _extract_recipe_text(self, text: str) -> Optional[str]:
         """テキストからレシピ部分を抽出して整形"""
@@ -364,28 +376,25 @@ class RecipeExtractor:
 
             model = genai.GenerativeModel(model_name)
 
-            prompt = """以下のテキストから料理レシピの情報のみを抽出し、整形してください。
+            prompt = """以下のテキストに料理レシピ（材料リストと作り方/手順）が含まれているか確認し、含まれている場合のみ抽出・整形してください。
 
-【除去する情報】
-- 宣伝文、ハッシュタグ、SNSアカウント情報
-- 関連動画リンク、プレイリストリンク
-- BGM情報、使用楽曲、音楽クレジット（例: "BGM: ○○", "Music by", "♪", "使用音源"）
-- チャンネル登録のお願い、高評価リクエスト
-- スポンサー情報、PR表記
-- 撮影機材、編集ソフトの情報
-- コメント欄への誘導文
+【重要な判断基準】
+- 実際の料理レシピとは「材料（分量付き）」と「作り方（調理手順）」が両方記載されているものです
+- 以下はレシピではありません：
+  - アプリやサービスの宣伝文
+  - 書籍の紹介リンク
+  - SNSアカウントの一覧
+  - BGM情報、クレジット
 
-【抽出する情報】
-- 料理名
-- 材料（分量付き）
-- 作り方（手順）
-- コツ・ポイント
+【レシピが含まれていない場合】
+以下のJSON形式で返してください：
+{"no_recipe": true}
 
-【出力形式】
-以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です：
+【レシピが含まれている場合】
+以下のJSON形式で返してください：
 {"dish_name": "料理名", "ingredients": ["材料1: 分量", "材料2: 分量"], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
 
-レシピ情報が不十分な場合は、元のテキストから読み取れる情報のみで構成してください。
+※除去する情報：宣伝文、ハッシュタグ、SNSリンク、BGM情報、チャンネル登録のお願い等
 
 【入力テキスト】
 """ + raw_recipe_text
@@ -425,6 +434,13 @@ class RecipeExtractor:
                     response_text = '\n'.join(json_lines).strip()
 
                 recipe_json = json.loads(response_text)
+
+                # レシピが含まれていない場合
+                if recipe_json.get('no_recipe'):
+                    logging.info("Gemini determined no recipe in text")
+                    result['refinement_status'] = 'no_recipe'
+                    result['refinement_error'] = 'AI判定: テキストにレシピが含まれていません'
+                    return result
 
                 if 'error' in recipe_json:
                     logging.warning(f"Gemini recipe refinement error: {recipe_json['error']}")
@@ -579,38 +595,57 @@ class RecipeExtractor:
         if not video_id:
             raise ValueError("Invalid YouTube URL")
 
+        extraction_flow = []
+
         logging.info(f"Checking YouTube description for recipe (using {model_name} for refinement)...")
+        extraction_flow.append("説明欄をチェック")
         description_result = self._get_recipe_from_description(video_id, model_name)
         if description_result:
             logging.info("Recipe found in description")
+            extraction_flow.append("キーワード検出 → AI抽出: 成功")
             return {
                 'recipe_text': description_result.get('text', ''),
                 'extraction_method': 'description',
+                'extraction_flow': ' → '.join(extraction_flow),
                 'ai_model': description_result.get('model_used', model_name),
                 'tokens_used': description_result.get('refinement_tokens'),
                 'refinement_status': description_result.get('refinement_status', 'skipped'),
                 'refinement_error': description_result.get('refinement_error')
             }
+        else:
+            extraction_flow.append("レシピなし")
 
         logging.info(f"Checking YouTube comments for recipe (using {model_name} for refinement)...")
+        extraction_flow.append("コメント欄をチェック")
         comment_result = self._get_recipe_from_comments(video_id, model_name)
         if comment_result:
             logging.info("Recipe found in author's comment")
+            extraction_flow.append("キーワード検出 → AI抽出: 成功")
             return {
                 'recipe_text': comment_result.get('text', ''),
                 'extraction_method': 'comment',
+                'extraction_flow': ' → '.join(extraction_flow),
                 'ai_model': comment_result.get('model_used', model_name),
                 'tokens_used': comment_result.get('refinement_tokens'),
                 'refinement_status': comment_result.get('refinement_status', 'skipped'),
                 'refinement_error': comment_result.get('refinement_error')
             }
+        else:
+            extraction_flow.append("レシピなし")
 
         logging.info(f"Extracting recipe from video using Gemini AI ({model_name})...")
-        return self._extract_recipe_with_gemini_model(video_url, model_name)
+        extraction_flow.append("動画解析")
+        result = self._extract_recipe_with_gemini_model(video_url, model_name)
+        result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
+        return result
 
     def _extract_recipe_from_other_platform_with_model(self, video_url: str, platform: str, model_name: str) -> Dict[str, Any]:
         """TikTok/Instagramからレシピを抽出（モデル指定版）"""
+        platform_name = 'TikTok' if platform == 'tiktok' else 'Instagram'
+        extraction_flow = []
+        
         logging.info(f"Attempting to extract recipe from {platform} description (using {model_name} for refinement)...")
+        extraction_flow.append(f"{platform_name}説明欄をチェック")
         try:
             response = self.session.get(video_url, timeout=10)
             response.raise_for_status()
@@ -622,23 +657,37 @@ class RecipeExtractor:
                 description = meta_description.get('content', '')
 
             if description and isinstance(description, str) and self._contains_recipe(description):
+                logging.info(f"Keyword found in {platform} description, sending to AI")
                 raw_recipe = self._extract_recipe_text(description)
                 if raw_recipe:
-                    logging.info(f"Recipe found in {platform} description")
                     refinement_result = self._refine_recipe_with_gemini(raw_recipe, model_name)
-                    return {
-                        'recipe_text': refinement_result.get('text', ''),
-                        'extraction_method': 'description',
-                        'ai_model': refinement_result.get('model_used', model_name),
-                        'tokens_used': refinement_result.get('refinement_tokens'),
-                        'refinement_status': refinement_result.get('refinement_status', 'skipped'),
-                        'refinement_error': refinement_result.get('refinement_error')
-                    }
+                    # AIがレシピなしと判定した場合は動画解析へ
+                    if refinement_result.get('refinement_status') == 'no_recipe':
+                        logging.info(f"AI determined no recipe in {platform} description")
+                        extraction_flow.append("キーワード検出 → AI判定: レシピなし")
+                    else:
+                        logging.info(f"Recipe found in {platform} description")
+                        extraction_flow.append("キーワード検出 → AI抽出: 成功")
+                        return {
+                            'recipe_text': refinement_result.get('text', ''),
+                            'extraction_method': 'description',
+                            'extraction_flow': ' → '.join(extraction_flow),
+                            'ai_model': refinement_result.get('model_used', model_name),
+                            'tokens_used': refinement_result.get('refinement_tokens'),
+                            'refinement_status': refinement_result.get('refinement_status', 'skipped'),
+                            'refinement_error': refinement_result.get('refinement_error')
+                        }
+            else:
+                extraction_flow.append("キーワードなし")
         except Exception as e:
             logging.warning(f"Could not fetch {platform} description: {e}. Proceeding with video analysis.")
+            extraction_flow.append("取得失敗")
 
         logging.info(f"No recipe in {platform} description, attempting video analysis with {model_name}...")
-        return self._extract_recipe_with_gemini_model(video_url, model_name)
+        extraction_flow.append("動画解析")
+        result = self._extract_recipe_with_gemini_model(video_url, model_name)
+        result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
+        return result
 
     def _extract_recipe_with_gemini_model(self, video_url: str, model_name: str) -> Dict[str, Any]:
         """Gemini APIを使って動画からレシピを抽出（モデル指定版）"""

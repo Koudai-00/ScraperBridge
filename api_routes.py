@@ -1084,8 +1084,11 @@ def test_extract_recipe():
                 'success': True,
                 'recipe_text': result['recipe_text'],
                 'extraction_method': result['extraction_method'],
+                'extraction_flow': result.get('extraction_flow', ''),
                 'ai_model': result.get('ai_model'),
-                'tokens_used': result.get('tokens_used', 0)
+                'tokens_used': result.get('tokens_used', 0),
+                'refinement_status': result.get('refinement_status'),
+                'refinement_error': result.get('refinement_error')
             }), 200
 
         except ValueError as e:

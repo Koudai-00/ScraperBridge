@@ -603,6 +603,7 @@ class RecipeExtractorTest {
         this.refinementStatusText = document.getElementById('refinementStatusText');
         this.refinementErrorSection = document.getElementById('refinementErrorSection');
         this.refinementErrorText = document.getElementById('refinementErrorText');
+        this.extractionFlowText = document.getElementById('extractionFlowText');
         this.recipeTextDisplay = document.getElementById('recipeTextDisplay');
         this.clearBtn = document.getElementById('clearRecipeResults');
     }
@@ -719,6 +720,11 @@ class RecipeExtractorTest {
         this.extractionMethodText.textContent = methodLabel;
         this.usedModelText.textContent = result.ai_model || '使用なし';
         this.tokensUsedText.textContent = result.tokens_used ? result.tokens_used.toLocaleString() : '0';
+
+        // Display extraction flow
+        if (this.extractionFlowText) {
+            this.extractionFlowText.textContent = result.extraction_flow || '-';
+        }
 
         // Display refinement status
         const refinementStatusLabels = {
