@@ -219,6 +219,9 @@ Preferred communication style: Simple, everyday language.
   - Video-capable and other models auto-translate to Japanese via gemma-3-4b-it
   - Translation model is protected from regular recipe extraction to ensure availability
 - **App API Default**: Uses 'openrouter:auto' mode for description/comment extraction
-- **Video Analysis**: Still uses Gemini 2.0 Flash (OpenRouter doesn't support video upload)
+- **Video Analysis**: Now uses OpenRouter with Base64 encoded video (no longer uses direct Gemini API)
+  - Videos are downloaded, encoded to Base64, and sent to OpenRouter's video-capable models
+  - Automatic fallback through VIDEO_CAPABLE_MODELS on 429 errors
+  - Translation applied automatically for non-Japanese models
 - **UI Updates**: Model selector organized by category with Auto option as default
 - **Environment Variable**: `OPENROUTER_API_KEY` required for OpenRouter functionality
