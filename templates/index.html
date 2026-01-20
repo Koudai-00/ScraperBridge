@@ -408,31 +408,54 @@
                                 AIモデル：
                             </label>
                             <select class="form-select" id="geminiModelSelect">
-                                <optgroup label="Gemini (Google)">
+                                <optgroup label="自動モード">
+                                    <option value="openrouter:auto" selected>自動（アプリと同じ順序で優先フォールバック）</option>
+                                </optgroup>
+                                <optgroup label="Gemini (Google Direct)">
                                     <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
                                     <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                                    <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash</option>
+                                    <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                                     <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Experimental (Free)</option>
                                     <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                                     <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
                                 </optgroup>
-                                <optgroup label="OpenRouter (Free) - テキスト抽出">
+                                <optgroup label="OpenRouter - 日本語対応モデル (優先)">
                                     <option value="openrouter:deepseek/deepseek-chat-v3-0324:free">DeepSeek Chat V3</option>
                                     <option value="openrouter:deepseek/deepseek-r1-0528:free">DeepSeek R1</option>
                                     <option value="openrouter:google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash (OpenRouter)</option>
                                     <option value="openrouter:meta-llama/llama-4-maverick:free">Llama 4 Maverick</option>
                                     <option value="openrouter:meta-llama/llama-4-scout:free">Llama 4 Scout</option>
                                     <option value="openrouter:qwen/qwen3-235b-a22b:free">Qwen3 235B</option>
+                                    <option value="openrouter:qwen/qwen3-30b-a3b:free">Qwen3 30B</option>
                                     <option value="openrouter:microsoft/phi-4:free">Microsoft Phi-4</option>
+                                    <option value="openrouter:microsoft/phi-4-multimodal-instruct:free">Microsoft Phi-4 Multimodal</option>
                                 </optgroup>
-                                <optgroup label="OpenRouter (Free) - ビジョン対応">
-                                    <option value="openrouter-vision:qwen/qwen-2.5-vl-7b-instruct:free">Qwen 2.5 VL 7B</option>
-                                    <option value="openrouter-vision:allenai/molmo-2-8b:free">Molmo 2 8B</option>
-                                    <option value="openrouter-vision:nvidia/nemotron-nano-12b-v2-vl:free">Nvidia Nemotron 12B VL</option>
+                                <optgroup label="OpenRouter - 動画対応モデル">
+                                    <option value="openrouter:qwen/qwen-2.5-vl-7b-instruct:free">Qwen 2.5 VL 7B</option>
+                                    <option value="openrouter:allenai/molmo-2-8b:free">Molmo 2 8B</option>
+                                    <option value="openrouter:nvidia/nemotron-nano-12b-v2-vl:free">Nvidia Nemotron 12B VL</option>
+                                </optgroup>
+                                <optgroup label="OpenRouter - その他モデル">
+                                    <option value="openrouter:open-r1/olympiccoder-7b:free">OlympicCoder 7B</option>
+                                    <option value="openrouter:meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B</option>
+                                    <option value="openrouter:meta-llama/llama-3.1-8b-instruct:free">Llama 3.1 8B</option>
+                                    <option value="openrouter:mistralai/mistral-small-3.1-24b-instruct:free">Mistral Small 3.1 24B</option>
+                                    <option value="openrouter:mistralai/devstral-small:free">Devstral Small</option>
+                                    <option value="openrouter:mistralai/mistral-nemo:free">Mistral Nemo</option>
+                                    <option value="openrouter:nvidia/llama-3.3-nemotron-super-49b-v1:free">Nvidia Nemotron Super 49B</option>
+                                    <option value="openrouter:nvidia/llama-3.1-nemotron-70b-instruct:free">Nvidia Nemotron 70B</option>
+                                    <option value="openrouter:nousresearch/hermes-3-llama-3.1-405b:free">Hermes 3 405B</option>
+                                    <option value="openrouter:nousresearch/deephermes-3-llama-3-8b-preview:free">DeepHermes 3 8B</option>
+                                    <option value="openrouter:moonshotai/kimi-vl-a3b-thinking:free">Kimi VL A3B</option>
+                                    <option value="openrouter:bytedance-research/ui-tars-72b:free">UI TARS 72B</option>
+                                    <option value="openrouter:featherless/qwerky-72b:free">Qwerky 72B</option>
+                                </optgroup>
+                                <optgroup label="OpenRouter - 翻訳用 (最終手段)">
+                                    <option value="openrouter:google/gemma-3-27b-it:free">Gemma 3 27B (翻訳専用)</option>
                                 </optgroup>
                             </select>
                             <small class="text-muted">
-                                説明欄やコメントにレシピがある場合はテキスト抽出、動画解析が必要な場合はGeminiを使用
+                                自動モードは日本語対応モデルを優先し、429エラー時に次のモデルへ自動フォールバック。動画解析が必要な場合はGeminiを使用。
                             </small>
                         </div>
 
