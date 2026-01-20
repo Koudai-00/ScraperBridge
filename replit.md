@@ -163,6 +163,19 @@ Preferred communication style: Simple, everyday language.
   - `SCRAPINGBEE_API_KEY`: ScrapingBee API authentication
   - `SESSION_SECRET`: Flask session encryption key
 
+### Improved Recipe Detection Logic (January 2026)
+- **Keyword Detection Refinement**: `_contains_recipe` now uses 8 specific keywords only:
+  - 材料, 作り方, 手順, 分量, ml, cc, 大さじ, 小さじ
+  - Returns true if ANY ONE keyword is found (previously required 3+)
+- **AI Validation for Recipe Content**: When keywords are detected, AI validates if actual recipe exists
+  - Prompt instructs AI to return `{"no_recipe": true}` if no actual ingredients/steps present
+  - Prevents false positives from promotional content containing recipe-related words
+- **Automatic Fallback**: If AI determines no recipe in description/comments, automatically proceeds to video analysis
+- **Extraction Flow Tracking**: New `extraction_flow` field tracks the entire extraction path
+  - Example: "説明欄をチェック → レシピなし → コメント欄をチェック → レシピなし → 動画解析 → 抽出成功"
+- **UI Enhancement**: Browser test interface now displays extraction flow for debugging
+- **Default Model Change**: Changed default Gemini model from `gemini-2.0-flash-exp` to `gemini-1.5-flash`
+
 ### Instagram Collection Import Feature (December 2025)
 - **New Endpoint**: `POST /api/extract-collection-metadata` - Extract metadata from Instagram collection files
 - **File Support**: 
