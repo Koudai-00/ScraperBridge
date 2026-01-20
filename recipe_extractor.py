@@ -4,11 +4,12 @@ import re
 import time
 import json
 import requests
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import google.generativeai as genai
 from bs4 import BeautifulSoup
 import pathlib
 import yt_dlp
+from openrouter_client import openrouter_client, TEXT_MODELS, VISION_MODELS, MODELS_NEEDING_TRANSLATION
 
 
 class RecipeExtractor:
@@ -199,7 +200,7 @@ class RecipeExtractor:
                 logging.info("Keyword found in description, sending to AI for recipe extraction")
                 raw_recipe = self._extract_recipe_text(description)
                 if raw_recipe:
-                    refinement_result = self._refine_recipe_with_gemini(raw_recipe, model_name)
+                    refinement_result = self._refine_recipe_with_model(raw_recipe, model_name)
                     # AIがレシピなしと判定した場合はNoneを返す（動画解析へ移行）
                     if refinement_result.get('refinement_status') == 'no_recipe':
                         logging.info("AI determined no recipe in description, will try video analysis")
@@ -265,7 +266,7 @@ class RecipeExtractor:
                         logging.info("Keyword found in author comment, sending to AI for recipe extraction")
                         raw_recipe = self._extract_recipe_text(comment_text)
                         if raw_recipe:
-                            refinement_result = self._refine_recipe_with_gemini(raw_recipe, model_name)
+                            refinement_result = self._refine_recipe_with_model(raw_recipe, model_name)
                             # AIがレシピなしと判定した場合はNoneを返す（動画解析へ移行）
                             if refinement_result.get('refinement_status') == 'no_recipe':
                                 logging.info("AI determined no recipe in comment, will try video analysis")
@@ -479,6 +480,147 @@ class RecipeExtractor:
             result['refinement_error'] = error_msg
             return result
 
+    def _refine_recipe_with_openrouter(self, raw_recipe_text: str, model_name: str = None) -> Dict[str, Any]:
+        """
+        OpenRouterを使って説明欄/コメントから抽出したレシピを整形する
+        429エラー時は自動的に別のモデルにフォールバック
+
+        Args:
+            raw_recipe_text: 整形前のレシピテキスト
+            model_name: 使用するOpenRouterモデル名（Noneの場合は自動フォールバック）
+
+        Returns:
+            Dict with recipe text and refinement info
+        """
+        result = {
+            'text': raw_recipe_text,
+            'refinement_status': 'skipped',
+            'refinement_tokens': None,
+            'refinement_error': None,
+            'model_used': model_name or 'openrouter-auto'
+        }
+
+        prompt = """以下のテキストに料理レシピ（材料リストと作り方/手順）が含まれているか確認し、含まれている場合のみ抽出・整形してください。
+
+【重要な判断基準】
+- 実際の料理レシピとは「材料（分量付き）」と「作り方（調理手順）」が両方記載されているものです
+- 以下はレシピではありません：
+  - アプリやサービスの宣伝文
+  - 書籍の紹介リンク
+  - SNSアカウントの一覧
+  - BGM情報、クレジット
+
+【レシピが含まれていない場合】
+以下のJSON形式で返してください：
+{"no_recipe": true}
+
+【レシピが含まれている場合】
+以下のJSON形式で返してください：
+{"dish_name": "料理名", "ingredients": ["材料1: 分量", "材料2: 分量"], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
+
+※除去する情報：宣伝文、ハッシュタグ、SNSリンク、BGM情報、チャンネル登録のお願い等
+
+【入力テキスト】
+""" + raw_recipe_text
+
+        messages = [
+            {"role": "system", "content": "あなたは料理レシピの整理専門家です。与えられたテキストからレシピ情報のみを抽出し、JSON形式で返してください。"},
+            {"role": "user", "content": prompt}
+        ]
+
+        try:
+            if model_name:
+                or_model = self._get_openrouter_model_id(model_name)
+                models = [or_model]
+            else:
+                models = TEXT_MODELS
+
+            response = openrouter_client.chat_completion(messages, models=models)
+
+            if not response.get('success'):
+                result['refinement_status'] = 'failed'
+                result['refinement_error'] = response.get('error', 'OpenRouter request failed')
+                return result
+
+            result['model_used'] = response.get('model_used', model_name)
+            result['refinement_tokens'] = response.get('tokens_used', 0)
+
+            response_text = response.get('content', '').strip()
+            if not response_text:
+                result['refinement_status'] = 'failed'
+                result['refinement_error'] = 'Empty response from OpenRouter'
+                return result
+
+            try:
+                if response_text.startswith('```'):
+                    lines = response_text.split('\n')
+                    json_lines = []
+                    in_json = False
+                    for line in lines:
+                        if line.startswith('```json'):
+                            in_json = True
+                            continue
+                        elif line.startswith('```'):
+                            in_json = False
+                            continue
+                        if in_json or (not line.startswith('```')):
+                            json_lines.append(line)
+                    response_text = '\n'.join(json_lines).strip()
+
+                recipe_json = json.loads(response_text)
+
+                if recipe_json.get('no_recipe'):
+                    logging.info("OpenRouter determined no recipe in text")
+                    result['refinement_status'] = 'no_recipe'
+                    result['refinement_error'] = 'AI判定: テキストにレシピが含まれていません'
+                    return result
+
+                if 'error' in recipe_json:
+                    result['refinement_status'] = 'failed'
+                    result['refinement_error'] = recipe_json['error']
+                    return result
+
+                refined_text = self._convert_json_to_text(recipe_json)
+                if refined_text and len(refined_text) > 50:
+                    logging.info(f"Recipe successfully refined with OpenRouter ({result['model_used']})")
+                    result['text'] = refined_text
+                    result['refinement_status'] = 'success'
+                    return result
+                else:
+                    result['refinement_status'] = 'failed'
+                    result['refinement_error'] = 'Refined text too short'
+                    return result
+
+            except json.JSONDecodeError:
+                cleaned = self._clean_recipe_text(response_text)
+                if cleaned and len(cleaned) > 50:
+                    result['text'] = cleaned
+                    result['refinement_status'] = 'success'
+                    return result
+                result['refinement_status'] = 'failed'
+                result['refinement_error'] = 'JSON parse failed'
+                return result
+
+        except Exception as e:
+            error_msg = str(e)
+            logging.error(f"Error refining recipe with OpenRouter: {error_msg}")
+            result['refinement_status'] = 'failed'
+            result['refinement_error'] = error_msg
+            return result
+
+    def _refine_recipe_with_model(self, raw_recipe_text: str, model_name: str) -> Dict[str, Any]:
+        """
+        モデル名に応じてGeminiまたはOpenRouterでレシピを整形
+
+        Args:
+            raw_recipe_text: 整形前のレシピテキスト
+            model_name: モデル名（'openrouter:xxx'形式ならOpenRouter、それ以外はGemini）
+        """
+        if self._is_openrouter_model(model_name):
+            return self._refine_recipe_with_openrouter(raw_recipe_text, model_name)
+        else:
+            return self._refine_recipe_with_gemini(raw_recipe_text, model_name)
+
     def _get_video_download_url_from_apify(self, video_url: str, platform: str) -> Optional[str]:
         """
         Apify APIを使ってTikTok/Instagram動画のダウンロードURLを取得
@@ -559,15 +701,49 @@ class RecipeExtractor:
         return normalized_url
 
     def get_available_models(self) -> list:
-        """利用可能なGeminiモデルのリストを返す"""
-        return [
-            {'id': 'gemini-3-flash-preview', 'name': 'Gemini 3 Flash Preview', 'default': False},
-            {'id': 'gemini-2.5-pro', 'name': 'Gemini 2.5 Pro', 'default': False},
-            {'id': 'gemini-2.5-flash', 'name': 'Gemini 2.5 Flash', 'default': False},
-            {'id': 'gemini-2.0-flash-exp', 'name': 'Gemini 2.0 Flash Experimental (Free)', 'default': False},
-            {'id': 'gemini-1.5-flash', 'name': 'Gemini 1.5 Flash', 'default': True},
-            {'id': 'gemini-1.5-pro', 'name': 'Gemini 1.5 Pro', 'default': False},
+        """利用可能なモデルのリストを返す（Gemini + OpenRouter）"""
+        models = [
+            {'id': 'gemini-3-flash-preview', 'name': 'Gemini 3 Flash Preview', 'default': False, 'provider': 'gemini'},
+            {'id': 'gemini-2.5-pro', 'name': 'Gemini 2.5 Pro', 'default': False, 'provider': 'gemini'},
+            {'id': 'gemini-2.5-flash', 'name': 'Gemini 2.5 Flash', 'default': False, 'provider': 'gemini'},
+            {'id': 'gemini-2.0-flash-exp', 'name': 'Gemini 2.0 Flash Experimental (Free)', 'default': True, 'provider': 'gemini'},
+            {'id': 'gemini-1.5-flash', 'name': 'Gemini 1.5 Flash', 'default': False, 'provider': 'gemini'},
+            {'id': 'gemini-1.5-pro', 'name': 'Gemini 1.5 Pro', 'default': False, 'provider': 'gemini'},
         ]
+        
+        openrouter_text_models = [
+            {'id': 'openrouter:google/gemini-2.0-flash-exp:free', 'name': 'OpenRouter: Gemini 2.0 Flash (Free)', 'default': False, 'provider': 'openrouter'},
+            {'id': 'openrouter:google/gemma-3-27b-it:free', 'name': 'OpenRouter: Gemma 3 27B (Free)', 'default': False, 'provider': 'openrouter'},
+            {'id': 'openrouter:google/gemma-3-12b-it:free', 'name': 'OpenRouter: Gemma 3 12B (Free)', 'default': False, 'provider': 'openrouter'},
+            {'id': 'openrouter:mistralai/mistral-small-3.1-24b-instruct:free', 'name': 'OpenRouter: Mistral Small 24B (Free)', 'default': False, 'provider': 'openrouter'},
+            {'id': 'openrouter:deepseek/deepseek-r1-0528:free', 'name': 'OpenRouter: DeepSeek R1 (Free)', 'default': False, 'provider': 'openrouter'},
+            {'id': 'openrouter:meta-llama/llama-3.3-70b-instruct:free', 'name': 'OpenRouter: Llama 3.3 70B (Free)', 'default': False, 'provider': 'openrouter'},
+            {'id': 'openrouter:meta-llama/llama-3.1-405b-instruct:free', 'name': 'OpenRouter: Llama 3.1 405B (Free)', 'default': False, 'provider': 'openrouter'},
+            {'id': 'openrouter:qwen/qwen3-coder:free', 'name': 'OpenRouter: Qwen3 Coder (Free)', 'default': False, 'provider': 'openrouter'},
+            {'id': 'openrouter:moonshotai/kimi-k2:free', 'name': 'OpenRouter: Kimi K2 (Free)', 'default': False, 'provider': 'openrouter'},
+        ]
+        
+        openrouter_vision_models = [
+            {'id': 'openrouter-vision:google/gemini-2.0-flash-exp:free', 'name': 'OpenRouter Vision: Gemini 2.0 Flash (Free)', 'default': False, 'provider': 'openrouter-vision'},
+            {'id': 'openrouter-vision:google/gemma-3-27b-it:free', 'name': 'OpenRouter Vision: Gemma 3 27B (Free)', 'default': False, 'provider': 'openrouter-vision'},
+            {'id': 'openrouter-vision:qwen/qwen-2.5-vl-7b-instruct:free', 'name': 'OpenRouter Vision: Qwen 2.5 VL 7B (Free) *要翻訳', 'default': False, 'provider': 'openrouter-vision'},
+            {'id': 'openrouter-vision:allenai/molmo-2-8b:free', 'name': 'OpenRouter Vision: Molmo 2 8B (Free) *要翻訳', 'default': False, 'provider': 'openrouter-vision'},
+            {'id': 'openrouter-vision:nvidia/nemotron-nano-12b-v2-vl:free', 'name': 'OpenRouter Vision: Nemotron 12B VL (Free) *要翻訳', 'default': False, 'provider': 'openrouter-vision'},
+        ]
+        
+        return models + openrouter_text_models + openrouter_vision_models
+    
+    def _is_openrouter_model(self, model_name: str) -> bool:
+        """OpenRouterモデルかどうかを判定"""
+        return model_name.startswith('openrouter:') or model_name.startswith('openrouter-vision:')
+    
+    def _get_openrouter_model_id(self, model_name: str) -> str:
+        """OpenRouterモデルIDを抽出（プレフィックスを除去）"""
+        if model_name.startswith('openrouter-vision:'):
+            return model_name.replace('openrouter-vision:', '')
+        if model_name.startswith('openrouter:'):
+            return model_name.replace('openrouter:', '')
+        return model_name
 
     def extract_recipe_with_model(self, video_url: str, model_name: str = None) -> Dict[str, Any]:
         """
@@ -660,7 +836,7 @@ class RecipeExtractor:
                 logging.info(f"Keyword found in {platform} description, sending to AI")
                 raw_recipe = self._extract_recipe_text(description)
                 if raw_recipe:
-                    refinement_result = self._refine_recipe_with_gemini(raw_recipe, model_name)
+                    refinement_result = self._refine_recipe_with_model(raw_recipe, model_name)
                     # AIがレシピなしと判定した場合は動画解析へ
                     if refinement_result.get('refinement_status') == 'no_recipe':
                         logging.info(f"AI determined no recipe in {platform} description")
