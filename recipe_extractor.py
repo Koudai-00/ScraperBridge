@@ -744,6 +744,42 @@ class RecipeExtractor:
         if model_name.startswith('openrouter:'):
             return model_name.replace('openrouter:', '')
         return model_name
+    
+    def _is_japanese_text(self, text: str) -> bool:
+        """テキストが日本語かどうかを判定"""
+        if not text:
+            return True
+        
+        japanese_chars = sum(1 for c in text if '\u3040' <= c <= '\u309f' or  # Hiragana
+                                                '\u30a0' <= c <= '\u30ff' or  # Katakana
+                                                '\u4e00' <= c <= '\u9fff')    # Kanji
+        total_chars = len(text.replace(' ', '').replace('\n', ''))
+        if total_chars == 0:
+            return True
+        
+        return (japanese_chars / total_chars) > 0.1
+    
+    def _ensure_japanese_response(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """レシピテキストが日本語でない場合は翻訳する"""
+        recipe_text = result.get('recipe_text', '')
+        model_used = result.get('ai_model', '')
+        
+        or_model_id = self._get_openrouter_model_id(model_used)
+        needs_translation = or_model_id in MODELS_NEEDING_TRANSLATION
+        
+        if needs_translation or not self._is_japanese_text(recipe_text):
+            logging.info(f"Non-Japanese response detected from {model_used}, translating...")
+            
+            translation_result = openrouter_client.translate_to_japanese(recipe_text)
+            if translation_result.get('success') and translation_result.get('content'):
+                result['recipe_text'] = translation_result['content']
+                result['translation_model'] = translation_result.get('model_used')
+                result['translation_tokens'] = translation_result.get('tokens_used', 0)
+                logging.info(f"Successfully translated recipe to Japanese using {translation_result.get('model_used')}")
+            else:
+                logging.warning(f"Translation failed: {translation_result.get('error')}")
+        
+        return result
 
     def extract_recipe_with_model(self, video_url: str, model_name: str = None) -> Dict[str, Any]:
         """
@@ -809,10 +845,23 @@ class RecipeExtractor:
         else:
             extraction_flow.append("レシピなし")
 
-        logging.info(f"Extracting recipe from video using Gemini AI ({model_name})...")
+        logging.info(f"Extracting recipe from video using AI ({model_name})...")
         extraction_flow.append("動画解析")
-        result = self._extract_recipe_with_gemini_model(video_url, model_name)
+        
+        # OpenRouter models don't support video upload, fall back to Gemini
+        video_model = model_name
+        if self._is_openrouter_model(model_name):
+            video_model = 'gemini-2.0-flash-exp'  # Use free Gemini for video
+            logging.info(f"OpenRouter doesn't support video, using {video_model} for video analysis")
+            extraction_flow.append(f"OpenRouter→Gemini切替")
+        
+        result = self._extract_recipe_with_gemini_model(video_url, video_model)
         result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
+        
+        # If non-Japanese response from certain models, translate
+        if result.get('recipe_text'):
+            result = self._ensure_japanese_response(result)
+        
         return result
 
     def _extract_recipe_from_other_platform_with_model(self, video_url: str, platform: str, model_name: str) -> Dict[str, Any]:
@@ -861,8 +910,20 @@ class RecipeExtractor:
 
         logging.info(f"No recipe in {platform} description, attempting video analysis with {model_name}...")
         extraction_flow.append("動画解析")
-        result = self._extract_recipe_with_gemini_model(video_url, model_name)
+        
+        # OpenRouter models don't support video upload, fall back to Gemini
+        video_model = model_name
+        if self._is_openrouter_model(model_name):
+            video_model = 'gemini-2.0-flash-exp'
+            logging.info(f"OpenRouter doesn't support video, using {video_model} for video analysis")
+            extraction_flow.append(f"OpenRouter→Gemini切替")
+        
+        result = self._extract_recipe_with_gemini_model(video_url, video_model)
         result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
+        
+        if result.get('recipe_text'):
+            result = self._ensure_japanese_response(result)
+        
         return result
 
     def _extract_recipe_with_gemini_model(self, video_url: str, model_name: str) -> Dict[str, Any]:
