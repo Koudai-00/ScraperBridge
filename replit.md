@@ -202,26 +202,20 @@ Preferred communication style: Simple, everyday language.
 ### OpenRouter Integration (January 2026)
 - **New Module**: `openrouter_client.py` - Handles OpenRouter API calls with automatic fallback
 - **Model Support**:
-  - Text models: Use 'openrouter:' prefix (e.g., `openrouter:nousresearch/hermes-3-llama-3.1-405b:free`)
-  - Vision models: Use 'openrouter-vision:' prefix (e.g., `openrouter-vision:qwen/qwen-2.5-vl-7b-instruct:free`)
+  - Text models: Use 'openrouter:' prefix (e.g., `openrouter:google/gemma-3-27b-it:free`)
   - Auto mode: Use 'openrouter:auto' for automatic model selection with fallback
-- **Automatic Fallback**: On 429 rate limit errors, automatically tries next model in priority list
-- **Model Priority (4-Tier System)**:
-  1. **Japanese-Capable Models (10)**: 
-     - 1位: Hermes 3 Llama 405B, 2位: Llama 3.1 405B, 3位: Gemini 2.0 Flash
-     - 4位: Llama 3.3 70B, 5位: GLM 4.5 Air, 6位: DeepSeek R1
-     - 7位: Gemma 3 27B, 8位: Qwen3 Next 80B, 9位: Mistral Small 3.1 24B, 10位: Llama 3.2 3B
-  2. **Video-Capable Models (6)**: 
-     - ①Gemini 2.0 Flash, ②Gemma 3 27B, ③Qwen 2.5 VL, ④Gemma 3 12B, ⑤Molmo 2, ⑥Nemotron VL
-  3. **Other Models (16+)**: Qwen3 Coder, Kimi K2, GPT OSS 120B/20B, etc. (日本語対応が弱い)
-  4. **Translation Reserved**: google/gemma-3-4b-it:free (翻訳専用)
-- **Translation Logic**: 
-  - Video-capable and other models auto-translate to Japanese via gemma-3-4b-it
-  - Translation model is protected from regular recipe extraction to ensure availability
+- **Automatic Fallback**: On any error (429, 402, 404, 400, etc.), automatically tries next model in priority list
+- **Streamlined Model Strategy (4 Models)**:
+  1. **1位**: `google/gemma-3-27b-it:free` - Gemma 3 27B (OpenRouter)
+  2. **2位**: `google/gemini-2.0-flash-exp:free` - Gemini 2.0 Flash (OpenRouter)
+  3. **3位**: `google/gemma-3-12b-it:free` - Gemma 3 12B (OpenRouter)
+  4. **4位**: `gemini-2.0-flash-lite` - Gemini 2.0 Flash Lite (Gemini API direct, final fallback)
+- **Dual API Approach**:
+  - **Text Extraction** (descriptions/comments): OpenRouter API with auto-fallback to Gemini API
+  - **Video Analysis**: Exclusively uses Gemini API direct (`gemini-2.0-flash-lite`)
+- **Translation Logic**: Japanese text detection only; translate if output is not Japanese
 - **App API Default**: Uses 'openrouter:auto' mode for description/comment extraction
-- **Video Analysis**: Now uses OpenRouter with Base64 encoded video (no longer uses direct Gemini API)
-  - Videos are downloaded, encoded to Base64, and sent to OpenRouter's video-capable models
-  - Automatic fallback through VIDEO_CAPABLE_MODELS on 429 errors
-  - Translation applied automatically for non-Japanese models
-- **UI Updates**: Model selector organized by category with Auto option as default
-- **Environment Variable**: `OPENROUTER_API_KEY` required for OpenRouter functionality
+- **UI Updates**: Model selector shows only 4 models with Auto option as default
+- **Environment Variables**: 
+  - `OPENROUTER_API_KEY` required for OpenRouter functionality
+  - `GEMINI_API_KEY` required for video analysis and final fallback
