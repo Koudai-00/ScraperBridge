@@ -1,12 +1,14 @@
 """
 OpenRouter API Client with automatic fallback support.
-Provides access to multiple free AI models with 429 rate limit handling.
+Provides access to Japanese-capable AI models with automatic fallback on errors.
 
-Model Priority Order:
-1. Japanese-capable models (best for recipe extraction)
-2. Video-capable models (for image analysis, but need translation)
-3. Other models (weak Japanese support, need translation)
-4. Translation reserved: google/gemma-3-27b-it:free (always last for translation fallback)
+Model Priority Order (4 models only):
+1. google/gemma-3-27b-it:free
+2. google/gemini-2.0-flash-exp:free
+3. google/gemma-3-12b-it:free
+4. gemini-2.0-flash-lite (via Gemini API, fallback)
+
+Note: Video analysis uses Gemini API directly (gemini-2.0-flash-lite), not OpenRouter.
 """
 
 import os
@@ -19,81 +21,25 @@ from typing import Dict, Any, List, Optional
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# ① 日本語対応可能モデル（10個）
-JAPANESE_CAPABLE_MODELS = [
-    "nousresearch/hermes-3-llama-3.1-405b:free",  # 1位
-    "meta-llama/llama-3.1-405b-instruct:free",    # 2位
-    "google/gemini-2.0-flash-exp:free",            # 3位
-    "meta-llama/llama-3.3-70b-instruct:free",     # 4位
-    "z-ai/glm-4.5-air:free",                       # 5位
-    "deepseek/deepseek-r1-0528:free",              # 6位
-    "google/gemma-3-27b-it:free",                  # 7位
-    "qwen/qwen3-next-80b-a3b-instruct:free",      # 8位
-    "mistralai/mistral-small-3.1-24b-instruct:free",  # 9位
-    "meta-llama/llama-3.2-3b-instruct:free",      # 10位
+# 日本語対応モデル（説明欄・コメント欄からの抽出用）
+# 優先順位: 1→2→3、エラー時は次のモデルへフォールバック
+# 4番目はGemini APIを直接使用（gemini-2.0-flash-lite）
+TEXT_MODELS = [
+    "google/gemma-3-27b-it:free",           # 1位
+    "google/gemini-2.0-flash-exp:free",     # 2位
+    "google/gemma-3-12b-it:free",           # 3位
 ]
 
-# ② 動画解析可能モデル（6個）
-VIDEO_CAPABLE_MODELS = [
-    "google/gemini-2.0-flash-exp:free",            # ①
-    "google/gemma-3-27b-it:free",                  # ②
-    "qwen/qwen-2.5-vl-7b-instruct:free",          # ③
-    "google/gemma-3-12b-it:free",                  # ④
-    "allenai/molmo-2-8b:free",                     # ⑤
-    "nvidia/nemotron-nano-12b-v2-vl:free",        # ⑥
-]
-
-# ③ その他のモデル（日本語対応が弱い - 上記に該当しなかったモデル）
-OTHER_MODELS = [
-    "qwen/qwen3-coder:free",
-    "moonshotai/kimi-k2:free",
-    "qwen/qwen3-4b:free",
-    "openai/gpt-oss-120b:free",
-    "openai/gpt-oss-20b:free",
-    "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
-    "tngtech/deepseek-r1t-chimera:free",
-    "tngtech/deepseek-r1t2-chimera:free",
-    "tngtech/tng-r1t-chimera:free",
-    "arcee-ai/trinity-mini:free",
-    "mistralai/devstral-2512:free",
-    "nvidia/nemotron-3-nano-30b-a3b:free",
-    "nvidia/nemotron-nano-9b-v2:free",
-    "xiaomi/mimo-v2-flash:free",
-    "google/gemma-3n-e4b-it:free",
-    "google/gemma-3n-e2b-it:free",
-]
-
-# ④ 翻訳用予約（最後に配置）
-TRANSLATION_MODEL = "google/gemma-3-4b-it:free"
-
-# 統合モデルリスト（優先順位順）: ①日本語対応 → ②動画解析 → ③その他 → ④翻訳用
-TEXT_MODELS = JAPANESE_CAPABLE_MODELS + VIDEO_CAPABLE_MODELS + OTHER_MODELS + [TRANSLATION_MODEL]
-
-# ビジョンモデル（画像解析用）= 動画解析モデルと同じ
-VISION_MODELS = VIDEO_CAPABLE_MODELS.copy()
-
-# 翻訳が必要なモデル（日本語対応モデル以外すべて）
-# 動画解析モデルのうち日本語対応に含まれないもの + その他のモデル
-MODELS_NEEDING_TRANSLATION = [
-    m for m in VIDEO_CAPABLE_MODELS if m not in JAPANESE_CAPABLE_MODELS
-] + OTHER_MODELS
+# 動画解析はGemini API直接使用のため、OpenRouterでは使用しない
+VIDEO_CAPABLE_MODELS = []
 
 # すべてのモデル情報（UI表示用）
 ALL_MODELS_INFO = {
     "japanese_capable": [
         {"id": m, "name": m.split("/")[1].replace(":free", ""), "category": "日本語対応"} 
-        for m in JAPANESE_CAPABLE_MODELS
-    ],
-    "video_capable": [
-        {"id": m, "name": m.split("/")[1].replace(":free", ""), "category": "動画解析可能（翻訳必要）"} 
-        for m in VIDEO_CAPABLE_MODELS
-    ],
-    "other": [
-        {"id": m, "name": m.split("/")[1].replace(":free", ""), "category": "その他（翻訳必要）"} 
-        for m in OTHER_MODELS
-    ],
-    "translation": [
-        {"id": TRANSLATION_MODEL, "name": TRANSLATION_MODEL.split("/")[1].replace(":free", ""), "category": "翻訳用予約"}
+        for m in TEXT_MODELS
+    ] + [
+        {"id": "gemini-2.0-flash-lite", "name": "gemini-2.0-flash-lite", "category": "日本語対応（Gemini API）"}
     ],
 }
 
@@ -206,11 +152,11 @@ class OpenRouterClient:
                                      temperature: float = 0.7) -> Dict[str, Any]:
         """
         Send a chat completion request with vision/image support.
-        Uses vision-capable models with automatic fallback.
+        Uses TEXT_MODELS with automatic fallback.
         
         Args:
             messages: List of message dicts, content can include image_url
-            models: List of vision models to try. Defaults to VISION_MODELS.
+            models: List of models to try. Defaults to TEXT_MODELS.
             max_tokens: Maximum tokens in response
             temperature: Sampling temperature
             
@@ -218,14 +164,10 @@ class OpenRouterClient:
             Dict with 'content', 'model_used', 'tokens_used', 'success', 'needs_translation'
         """
         if models is None:
-            models = VISION_MODELS
+            models = TEXT_MODELS
         
         result = self.chat_completion(messages, models, max_tokens, temperature)
-        
-        if result["success"] and result["model_used"] in MODELS_NEEDING_TRANSLATION:
-            result["needs_translation"] = True
-        else:
-            result["needs_translation"] = False
+        result["needs_translation"] = False
         
         return result
     
@@ -253,9 +195,8 @@ class OpenRouterClient:
             }
         ]
         
-        # 翻訳には専用の翻訳モデル（gemma-3-27b-it）を使用
-        # 他のモデルが429エラーの場合でも翻訳用に予約されている
-        return self.chat_completion(messages, [TRANSLATION_MODEL], max_tokens=4096, temperature=0.3)
+        # 翻訳にはTEXT_MODELSを使用（gemma-3-27b-itが最優先）
+        return self.chat_completion(messages, TEXT_MODELS, max_tokens=4096, temperature=0.3)
     
     def refine_recipe(self, raw_text: str, model: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -366,8 +307,6 @@ class OpenRouterClient:
                     content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                     usage = data.get("usage", {})
                     
-                    needs_translation = model in MODELS_NEEDING_TRANSLATION
-                    
                     return {
                         "success": True,
                         "content": content,
@@ -375,7 +314,7 @@ class OpenRouterClient:
                         "tokens_used": usage.get("total_tokens", 0),
                         "prompt_tokens": usage.get("prompt_tokens", 0),
                         "completion_tokens": usage.get("completion_tokens", 0),
-                        "needs_translation": needs_translation,
+                        "needs_translation": False,
                     }
                 elif response.status_code == 429:
                     logging.warning(f"Rate limited on {model} for video analysis, trying next model...")

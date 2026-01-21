@@ -9,7 +9,7 @@ import google.generativeai as genai
 from bs4 import BeautifulSoup
 import pathlib
 import yt_dlp
-from openrouter_client import openrouter_client, TEXT_MODELS, VISION_MODELS, VIDEO_CAPABLE_MODELS, MODELS_NEEDING_TRANSLATION
+from openrouter_client import openrouter_client, TEXT_MODELS, VIDEO_CAPABLE_MODELS
 
 
 class RecipeExtractor:
@@ -126,9 +126,9 @@ class RecipeExtractor:
         else:
             extraction_flow.append("レシピなし")
 
-        # 動画解析はGeminiを使用（OpenRouterは動画アップロード非対応）
-        video_model = 'gemini-2.0-flash-exp'
-        logging.info(f"Extracting recipe from video using Gemini AI ({video_model})...")
+        # 動画解析はGemini API直接使用（gemini-2.0-flash-lite）
+        video_model = 'gemini-2.0-flash-lite'
+        logging.info(f"Extracting recipe from video using Gemini API ({video_model})...")
         extraction_flow.append("動画解析")
         result = self._extract_recipe_with_gemini_model(video_url, video_model)
         result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
@@ -689,8 +689,8 @@ class RecipeExtractor:
                     
                     formatted_text = self._convert_json_to_text(recipe_json)
                     
-                    # 翻訳が必要な場合
-                    if model_used in MODELS_NEEDING_TRANSLATION or not self._is_japanese_text(formatted_text):
+                    # 翻訳が必要な場合（日本語でない場合のみ）
+                    if not self._is_japanese_text(formatted_text):
                         translation_result = openrouter_client.translate_to_japanese(formatted_text)
                         if translation_result.get('success'):
                             formatted_text = translation_result.get('content', formatted_text)
@@ -707,8 +707,8 @@ class RecipeExtractor:
                     # JSON解析失敗時はテキストクリーニング
                     cleaned_text = self._clean_recipe_text(content)
                     
-                    # 翻訳が必要な場合
-                    if model_used in MODELS_NEEDING_TRANSLATION or not self._is_japanese_text(cleaned_text):
+                    # 翻訳が必要な場合（日本語でない場合のみ）
+                    if not self._is_japanese_text(cleaned_text):
                         translation_result = openrouter_client.translate_to_japanese(cleaned_text)
                         if translation_result.get('success'):
                             cleaned_text = translation_result.get('content', cleaned_text)
@@ -722,23 +722,12 @@ class RecipeExtractor:
                         'refinement_error': None
                     }
             else:
-                logging.warning(f"OpenRouter auto refinement failed: {result.get('error')}")
-                return {
-                    'text': raw_recipe_text,
-                    'model_used': None,
-                    'refinement_status': 'failed',
-                    'refinement_tokens': 0,
-                    'refinement_error': result.get('error')
-                }
+                # OpenRouterが全て失敗した場合、Gemini 2.0 Flash Liteにフォールバック
+                logging.warning(f"OpenRouter auto refinement failed: {result.get('error')}, falling back to Gemini")
+                return self._refine_recipe_with_gemini(raw_recipe_text, 'gemini-2.0-flash-lite')
         except Exception as e:
-            logging.error(f"Error in OpenRouter auto refinement: {e}")
-            return {
-                'text': raw_recipe_text,
-                'model_used': None,
-                'refinement_status': 'failed',
-                'refinement_tokens': 0,
-                'refinement_error': str(e)
-            }
+            logging.error(f"Error in OpenRouter auto refinement: {e}, falling back to Gemini")
+            return self._refine_recipe_with_gemini(raw_recipe_text, 'gemini-2.0-flash-lite')
 
     def _get_video_download_url_from_apify(self, video_url: str, platform: str) -> Optional[str]:
         """
@@ -883,14 +872,10 @@ class RecipeExtractor:
         recipe_text = result.get('recipe_text', '')
         model_used = result.get('ai_model', '')
         
-        # 'openrouter:auto'の場合は実際のモデルが不明なので、テキストの言語をチェック
-        if model_used == 'openrouter:auto':
-            needs_translation = not self._is_japanese_text(recipe_text)
-        else:
-            or_model_id = self._get_openrouter_model_id(model_used)
-            needs_translation = or_model_id in MODELS_NEEDING_TRANSLATION
+        # 日本語でない場合は翻訳
+        needs_translation = not self._is_japanese_text(recipe_text)
         
-        if needs_translation or not self._is_japanese_text(recipe_text):
+        if needs_translation:
             logging.info(f"Non-Japanese response detected from {model_used}, translating...")
             
             translation_result = openrouter_client.translate_to_japanese(recipe_text)
@@ -968,18 +953,14 @@ class RecipeExtractor:
         else:
             extraction_flow.append("レシピなし")
 
-        logging.info(f"Extracting recipe from video using AI ({model_name})...")
+        # 動画解析はGemini API直接使用（gemini-2.0-flash-lite）
+        video_model = 'gemini-2.0-flash-lite'
+        logging.info(f"Extracting recipe from video using Gemini API ({video_model})...")
         extraction_flow.append("動画解析")
         
-        # OpenRouterのBase64動画解析を使用
-        result = self._extract_recipe_with_openrouter_video(video_url, model_name)
-        
-        if result.get('success'):
-            extraction_flow.append("抽出成功")
-            result['extraction_flow'] = ' → '.join(extraction_flow)
-        else:
-            extraction_flow.append(f"失敗: {result.get('error', 'unknown')}")
-            result['extraction_flow'] = ' → '.join(extraction_flow)
+        result = self._extract_recipe_with_gemini_model(video_url, video_model)
+        extraction_flow.append("抽出成功")
+        result['extraction_flow'] = ' → '.join(extraction_flow)
         
         return result
 
@@ -1027,18 +1008,14 @@ class RecipeExtractor:
             logging.warning(f"Could not fetch {platform} description: {e}. Proceeding with video analysis.")
             extraction_flow.append("取得失敗")
 
-        logging.info(f"No recipe in {platform} description, attempting video analysis with {model_name}...")
+        # 動画解析はGemini API直接使用（gemini-2.0-flash-lite）
+        video_model = 'gemini-2.0-flash-lite'
+        logging.info(f"No recipe in {platform} description, extracting from video using Gemini API ({video_model})...")
         extraction_flow.append("動画解析")
         
-        # OpenRouterのBase64動画解析を使用
-        result = self._extract_recipe_with_openrouter_video(video_url, model_name)
-        
-        if result.get('success'):
-            extraction_flow.append("抽出成功")
-            result['extraction_flow'] = ' → '.join(extraction_flow)
-        else:
-            extraction_flow.append(f"失敗: {result.get('error', 'unknown')}")
-            result['extraction_flow'] = ' → '.join(extraction_flow)
+        result = self._extract_recipe_with_gemini_model(video_url, video_model)
+        extraction_flow.append("抽出成功")
+        result['extraction_flow'] = ' → '.join(extraction_flow)
         
         return result
 
