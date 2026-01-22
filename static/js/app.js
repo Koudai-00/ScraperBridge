@@ -600,6 +600,8 @@ class RecipeExtractorTest {
         this.extractionMethodText = document.getElementById('extractionMethodText');
         this.usedModelText = document.getElementById('usedModelText');
         this.tokensUsedText = document.getElementById('tokensUsedText');
+        this.inputTokensText = document.getElementById('inputTokensText');
+        this.outputTokensText = document.getElementById('outputTokensText');
         this.refinementStatusText = document.getElementById('refinementStatusText');
         this.refinementErrorSection = document.getElementById('refinementErrorSection');
         this.refinementErrorText = document.getElementById('refinementErrorText');
@@ -720,6 +722,14 @@ class RecipeExtractorTest {
         this.extractionMethodText.textContent = methodLabel;
         this.usedModelText.textContent = result.ai_model || '使用なし';
         this.tokensUsedText.textContent = result.tokens_used ? result.tokens_used.toLocaleString() : '0';
+        
+        // Display input/output tokens
+        if (this.inputTokensText) {
+            this.inputTokensText.textContent = result.input_tokens ? result.input_tokens.toLocaleString() : '0';
+        }
+        if (this.outputTokensText) {
+            this.outputTokensText.textContent = result.output_tokens ? result.output_tokens.toLocaleString() : '0';
+        }
 
         // Display extraction flow
         if (this.extractionFlowText) {

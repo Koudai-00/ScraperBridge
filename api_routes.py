@@ -1087,6 +1087,8 @@ def test_extract_recipe():
                 'extraction_flow': result.get('extraction_flow', ''),
                 'ai_model': result.get('ai_model'),
                 'tokens_used': result.get('tokens_used', 0),
+                'input_tokens': result.get('input_tokens', 0),
+                'output_tokens': result.get('output_tokens', 0),
                 'refinement_status': result.get('refinement_status'),
                 'refinement_error': result.get('refinement_error')
             }), 200

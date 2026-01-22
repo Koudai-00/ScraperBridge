@@ -96,6 +96,8 @@ class RecipeExtractor:
                     'extraction_flow': ' → '.join(extraction_flow),
                     'ai_model': actual_model,
                     'tokens_used': description_result.get('refinement_tokens'),
+                    'input_tokens': description_result.get('input_tokens'),
+                    'output_tokens': description_result.get('output_tokens'),
                     'refinement_status': description_result.get('refinement_status', 'skipped'),
                     'refinement_error': description_result.get('refinement_error')
                 }
@@ -120,6 +122,8 @@ class RecipeExtractor:
                     'extraction_flow': ' → '.join(extraction_flow),
                     'ai_model': actual_model,
                     'tokens_used': comment_result.get('refinement_tokens'),
+                    'input_tokens': comment_result.get('input_tokens'),
+                    'output_tokens': comment_result.get('output_tokens'),
                     'refinement_status': comment_result.get('refinement_status', 'skipped'),
                     'refinement_error': comment_result.get('refinement_error')
                 }
@@ -443,9 +447,15 @@ class RecipeExtractor:
 
             # トークン使用量を取得
             tokens_used = None
+            input_tokens = None
+            output_tokens = None
             if hasattr(response, 'usage_metadata') and response.usage_metadata:
                 tokens_used = getattr(response.usage_metadata, 'total_token_count', None)
+                input_tokens = getattr(response.usage_metadata, 'prompt_token_count', None)
+                output_tokens = getattr(response.usage_metadata, 'candidates_token_count', None)
             result['refinement_tokens'] = tokens_used
+            result['input_tokens'] = input_tokens
+            result['output_tokens'] = output_tokens
 
             response_text = response.text.strip()
 
@@ -671,6 +681,8 @@ class RecipeExtractor:
                 content = result.get('content', '')
                 model_used = result.get('model_used', '')
                 tokens_used = result.get('tokens_used', 0)
+                input_tokens = result.get('prompt_tokens', 0)
+                output_tokens = result.get('completion_tokens', 0)
                 
                 # JSONレスポンスの解析
                 try:
@@ -684,6 +696,8 @@ class RecipeExtractor:
                             'model_used': model_used,
                             'refinement_status': 'no_recipe',
                             'refinement_tokens': tokens_used,
+                            'input_tokens': input_tokens,
+                            'output_tokens': output_tokens,
                             'refinement_error': None
                         }
                     
@@ -695,12 +709,16 @@ class RecipeExtractor:
                         if translation_result.get('success'):
                             formatted_text = translation_result.get('content', formatted_text)
                             tokens_used += translation_result.get('tokens_used', 0)
+                            input_tokens += translation_result.get('prompt_tokens', 0)
+                            output_tokens += translation_result.get('completion_tokens', 0)
                     
                     return {
                         'text': formatted_text,
                         'model_used': model_used,
                         'refinement_status': 'success',
                         'refinement_tokens': tokens_used,
+                        'input_tokens': input_tokens,
+                        'output_tokens': output_tokens,
                         'refinement_error': None
                     }
                 except json.JSONDecodeError:
@@ -713,12 +731,16 @@ class RecipeExtractor:
                         if translation_result.get('success'):
                             cleaned_text = translation_result.get('content', cleaned_text)
                             tokens_used += translation_result.get('tokens_used', 0)
+                            input_tokens += translation_result.get('prompt_tokens', 0)
+                            output_tokens += translation_result.get('completion_tokens', 0)
                     
                     return {
                         'text': cleaned_text,
                         'model_used': model_used,
                         'refinement_status': 'success',
                         'refinement_tokens': tokens_used,
+                        'input_tokens': input_tokens,
+                        'output_tokens': output_tokens,
                         'refinement_error': None
                     }
             else:
@@ -929,6 +951,8 @@ class RecipeExtractor:
                 'extraction_flow': ' → '.join(extraction_flow),
                 'ai_model': description_result.get('model_used', model_name),
                 'tokens_used': description_result.get('refinement_tokens'),
+                'input_tokens': description_result.get('input_tokens'),
+                'output_tokens': description_result.get('output_tokens'),
                 'refinement_status': description_result.get('refinement_status', 'skipped'),
                 'refinement_error': description_result.get('refinement_error')
             }
@@ -947,6 +971,8 @@ class RecipeExtractor:
                 'extraction_flow': ' → '.join(extraction_flow),
                 'ai_model': comment_result.get('model_used', model_name),
                 'tokens_used': comment_result.get('refinement_tokens'),
+                'input_tokens': comment_result.get('input_tokens'),
+                'output_tokens': comment_result.get('output_tokens'),
                 'refinement_status': comment_result.get('refinement_status', 'skipped'),
                 'refinement_error': comment_result.get('refinement_error')
             }
@@ -999,6 +1025,8 @@ class RecipeExtractor:
                             'extraction_flow': ' → '.join(extraction_flow),
                             'ai_model': refinement_result.get('model_used', model_name),
                             'tokens_used': refinement_result.get('refinement_tokens'),
+                            'input_tokens': refinement_result.get('input_tokens'),
+                            'output_tokens': refinement_result.get('output_tokens'),
                             'refinement_status': refinement_result.get('refinement_status', 'skipped'),
                             'refinement_error': refinement_result.get('refinement_error')
                         }
@@ -1220,12 +1248,14 @@ class RecipeExtractor:
             if not self._validate_recipe_structure(recipe_text):
                 raise ValueError("Incomplete recipe: missing ingredients or steps")
 
-            tokens_used = self._estimate_tokens(response)
+            tokens_info = self._estimate_tokens(response)
             return {
                 'recipe_text': recipe_text,
                 'extraction_method': 'ai_video',
                 'ai_model': model_name,
-                'tokens_used': tokens_used,
+                'tokens_used': tokens_info.get('total', 0),
+                'input_tokens': tokens_info.get('input', 0),
+                'output_tokens': tokens_info.get('output', 0),
                 'refinement_status': 'not_applicable',
                 'refinement_error': None
             }
@@ -1333,12 +1363,14 @@ class RecipeExtractor:
                 raise ValueError(
                     "Incomplete recipe: missing ingredients or steps")
 
-            tokens_used = self._estimate_tokens(response)
+            tokens_info = self._estimate_tokens(response)
             return {
                 'recipe_text': recipe_text,
                 'extraction_method': 'ai_video',
                 'ai_model': model_name,
-                'tokens_used': tokens_used,
+                'tokens_used': tokens_info.get('total', 0),
+                'input_tokens': tokens_info.get('input', 0),
+                'output_tokens': tokens_info.get('output', 0),
                 'refinement_status': 'not_applicable',
                 'refinement_error': None
             }
@@ -1426,17 +1458,27 @@ class RecipeExtractor:
         
         return result
 
-    def _estimate_tokens(self, response) -> int:
-        """トークン使用量を推定"""
+    def _estimate_tokens(self, response) -> Dict[str, int]:
+        """トークン使用量を推定（入力/出力/合計を返す）"""
         try:
             if hasattr(response, 'usage_metadata'):
-                return (response.usage_metadata.prompt_token_count +
-                        response.usage_metadata.candidates_token_count)
+                input_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0)
+                output_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0)
+                return {
+                    'total': input_tokens + output_tokens,
+                    'input': input_tokens,
+                    'output': output_tokens
+                }
             text_length = len(response.text)
-            return int(text_length / 1.5)
+            estimated = int(text_length / 1.5)
+            return {
+                'total': estimated,
+                'input': 0,
+                'output': estimated
+            }
         except Exception as e:
             logging.warning(f"Could not estimate tokens: {e}")
-            return 0
+            return {'total': 0, 'input': 0, 'output': 0}
 
     def calculate_cost(self, model: str, tokens_used: int) -> float:
         """AI利用コストを計算（USD）"""
