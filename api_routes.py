@@ -7,6 +7,7 @@ from flask import Blueprint, request, jsonify
 from metadata_extractor import MetadataExtractor
 from recipe_extractor import RecipeExtractor
 from folder_categorizer import FolderCategorizer
+from layout_analyzer import LayoutAnalyzer
 
 # Create blueprint for API routes
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -19,6 +20,9 @@ recipe_extractor = RecipeExtractor()
 
 # Initialize folder categorizer
 folder_categorizer = FolderCategorizer()
+
+# Initialize layout analyzer
+layout_analyzer = LayoutAnalyzer()
 
 # Get API keys from environment
 APP_API_KEY = os.getenv('APP_API_KEY')
@@ -1107,6 +1111,104 @@ def extract_collection_metadata():
         
     except Exception as e:
         logging.error(f"Error in extract_collection_metadata: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'サーバーエラーが発生しました: {str(e)}'
+        }), 500
+
+
+@api_bp.route('/v1/analyze-layout', methods=['POST'])
+@require_api_key('app')
+def analyze_layout():
+    """
+    レシピサイトのレイアウトを解析し、調理モード用のCSSルールを返す
+    
+    Request headers:
+    {
+        "X-API-Key": "your-app-api-key"
+    }
+    
+    Request body:
+    {
+        "url": "https://cookpad.com/recipe/12345",
+        "user_id": "user_12345..."  // optional
+    }
+    
+    Response (成功時):
+    {
+        "success": true,
+        "site_domain": "cookpad.com",
+        "hide_selectors": [".ad-container", "#sidebar", ".social-buttons"],
+        "main_content_selector": ".recipe-main",
+        "cached": true/false
+    }
+    
+    Response (エラー時):
+    {
+        "success": false,
+        "error": "エラーメッセージ"
+    }
+    
+    Notes:
+    - 同一ドメインのルールは1ヶ月間キャッシュされます
+    - キャッシュがある場合はAI処理をスキップして即座に返却します
+    - user_idを指定すると利用履歴がDBに記録されます
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Request body is required'
+            }), 400
+        
+        if 'url' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing url field'
+            }), 400
+        
+        url = data['url'].strip()
+        user_id = data.get('user_id')
+        
+        if not url:
+            return jsonify({
+                'success': False,
+                'error': 'url cannot be empty'
+            }), 400
+        
+        logging.info(f"Layout analysis request - URL: {url}, User: {user_id}")
+        
+        try:
+            result = layout_analyzer.analyze_layout(url, user_id)
+            
+            return jsonify({
+                'success': True,
+                'site_domain': result.get('site_domain'),
+                'hide_selectors': result.get('hide_selectors', []),
+                'main_content_selector': result.get('main_content_selector', 'body'),
+                'cached': result.get('cached', False),
+                'created_at': result.get('created_at'),
+                'updated_at': result.get('updated_at')
+            }), 200
+            
+        except ValueError as e:
+            logging.warning(f"Layout analysis failed: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 400
+            
+        except Exception as e:
+            logging.error(f"Layout analysis error: {e}")
+            return jsonify({
+                'success': False,
+                'error': f'レイアウト解析に失敗しました: {str(e)}'
+            }), 500
+    
+    except Exception as e:
+        logging.error(f"Error in analyze_layout: {e}")
         return jsonify({
             'success': False,
             'error': f'サーバーエラーが発生しました: {str(e)}'
