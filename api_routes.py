@@ -797,16 +797,6 @@ def get_metrics():
         return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
-@api_bp.route('/extract-collection-metadata', methods=['POST'])
-@require_api_key('app')
-def extract_collection_metadata():
-    """
-    InstagramコレクションファイルからURLを抽出し、各投稿のメタデータを取得
-    """
-    # Implementation hidden as it wasn't fully shown in previous view_file
-    pass # Placeholder to match context
-
-
 @api_bp.route('/suggest-folder', methods=['POST'])
 @require_api_key('app')
 def suggest_folder():
@@ -876,6 +866,13 @@ def suggest_folder():
             'suggested_folder_id': None,
             'reason': f"Internal server error: {str(e)}"
         }), 500
+
+
+@api_bp.route('/extract-collection-metadata', methods=['POST'])
+@require_api_key('app')
+def extract_collection_metadata():
+    """
+    InstagramコレクションファイルからURLを抽出し、各投稿のメタデータを取得
     
     Request headers:
     {
@@ -1119,9 +1116,9 @@ def suggest_folder():
 @api_bp.route('/test/extract-recipe', methods=['POST'])
 def test_extract_recipe():
     """
-    ブラウザテスト用: レシピ抽出（モデル選択可能）
+    Browser test: Recipe extraction (model selectable)
     
-    ※ アプリ側のエンドポイント /api/extract-recipe は変更なし
+    Note: App endpoint /api/extract-recipe is unchanged
     
     Request body:
     {
