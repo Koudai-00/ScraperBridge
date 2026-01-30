@@ -1501,3 +1501,130 @@ class RecipeExtractor:
         cost = (assumed_input_tokens * pricing[model]['input'] +
                 assumed_output_tokens * pricing[model]['output'])
         return round(cost, 8)
+
+    def extract_recipe_from_image(self, image_data: bytes, image_mime_type: str = 'image/jpeg') -> Dict[str, Any]:
+        """
+        画像からレシピ情報を抽出する
+        
+        Args:
+            image_data: 画像のバイナリデータ
+            image_mime_type: 画像のMIMEタイプ (image/jpeg, image/png, image/webp, image/heic)
+        
+        Returns:
+            {
+                'success': True,
+                'dish_name': '料理名',
+                'ingredients': [{'name': '材料名', 'amount': '分量'}],
+                'steps': ['手順1', '手順2', ...],
+                'tips': 'コツや注意点',
+                'servings': '2人分',
+                'cooking_time': '30分',
+                'raw_text': '抽出した生テキスト',
+                'tokens_used': 1234,
+                'input_tokens': 800,
+                'output_tokens': 434
+            }
+        """
+        self._ensure_gemini_initialized()
+        
+        model_name = 'gemini-2.0-flash-lite'
+        
+        prompt = """あなたは料理レシピの専門家です。
+この画像（レシピ本や料理雑誌の写真）からレシピ情報を抽出してください。
+
+## タスク
+画像に写っているレシピの以下の情報を正確に読み取り、構造化してください：
+1. 料理名
+2. 材料と分量（すべて）
+3. 作り方の手順（ステップごと）
+4. コツや注意点（あれば）
+5. 何人分か（記載があれば）
+6. 調理時間（記載があれば）
+
+## 出力形式
+必ず以下のJSON形式で出力してください。それ以外のテキストは不要です。
+
+```json
+{
+    "dish_name": "料理名",
+    "servings": "2人分",
+    "cooking_time": "30分",
+    "ingredients": [
+        {"name": "鶏もも肉", "amount": "300g"},
+        {"name": "玉ねぎ", "amount": "1個"},
+        {"name": "醤油", "amount": "大さじ2"}
+    ],
+    "steps": [
+        "鶏肉を一口大に切る",
+        "玉ねぎを薄切りにする",
+        "フライパンで鶏肉を炒める"
+    ],
+    "tips": "鶏肉は常温に戻してから調理すると柔らかく仕上がります"
+}
+```
+
+## 注意事項
+- 画像から読み取れない情報は null にしてください
+- 材料は画像に記載されているものをすべて抽出してください
+- 手順は番号順に配列で返してください
+- 日本語で出力してください
+"""
+
+        try:
+            import base64
+            
+            model = genai.GenerativeModel(model_name)
+            
+            image_part = {
+                'mime_type': image_mime_type,
+                'data': base64.b64encode(image_data).decode('utf-8')
+            }
+            
+            response = model.generate_content([prompt, image_part])
+            
+            response_text = response.text.strip()
+            logging.info(f"Gemini image analysis response length: {len(response_text)}")
+            
+            tokens_info = self._estimate_tokens(response)
+            
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                try:
+                    result = json.loads(json_match.group())
+                    
+                    return {
+                        'success': True,
+                        'dish_name': result.get('dish_name'),
+                        'servings': result.get('servings'),
+                        'cooking_time': result.get('cooking_time'),
+                        'ingredients': result.get('ingredients', []),
+                        'steps': result.get('steps', []),
+                        'tips': result.get('tips'),
+                        'raw_text': response_text,
+                        'ai_model': model_name,
+                        'tokens_used': tokens_info.get('total', 0),
+                        'input_tokens': tokens_info.get('input', 0),
+                        'output_tokens': tokens_info.get('output', 0)
+                    }
+                except json.JSONDecodeError as e:
+                    logging.warning(f"JSON parse error: {e}")
+            
+            return {
+                'success': True,
+                'dish_name': None,
+                'servings': None,
+                'cooking_time': None,
+                'ingredients': [],
+                'steps': [],
+                'tips': None,
+                'raw_text': response_text,
+                'ai_model': model_name,
+                'tokens_used': tokens_info.get('total', 0),
+                'input_tokens': tokens_info.get('input', 0),
+                'output_tokens': tokens_info.get('output', 0),
+                'parse_error': 'Could not parse structured data from image'
+            }
+            
+        except Exception as e:
+            logging.error(f"Error extracting recipe from image: {e}")
+            raise ValueError(f"画像からのレシピ抽出に失敗しました: {str(e)}")

@@ -1215,6 +1215,140 @@ def analyze_layout():
         }), 500
 
 
+@api_bp.route('/v1/extract-recipe-from-image', methods=['POST'])
+@require_api_key('app')
+def extract_recipe_from_image():
+    """
+    画像からレシピ情報を抽出する
+    
+    Request headers:
+    {
+        "X-API-Key": "your-app-api-key"
+    }
+    
+    Request:
+    - Content-Type: multipart/form-data
+    - image: 画像ファイル (JPEG, PNG, WebP, HEIC)
+    - user_id: ユーザーID (optional)
+    
+    Response (成功時):
+    {
+        "success": true,
+        "dish_name": "肉じゃが",
+        "servings": "4人分",
+        "cooking_time": "30分",
+        "ingredients": [
+            {"name": "じゃがいも", "amount": "4個"},
+            {"name": "牛肉", "amount": "200g"}
+        ],
+        "steps": [
+            "じゃがいもを一口大に切る",
+            "牛肉を炒める"
+        ],
+        "tips": "煮込む時は落し蓋をすると味が染みやすい",
+        "ai_model": "gemini-2.0-flash-lite",
+        "tokens_used": 1234,
+        "input_tokens": 800,
+        "output_tokens": 434
+    }
+    
+    Response (エラー時):
+    {
+        "success": false,
+        "error": "エラーメッセージ"
+    }
+    """
+    try:
+        if 'image' not in request.files:
+            return jsonify({
+                'success': False,
+                'error': '画像ファイルが送信されていません。imageフィールドに画像を添付してください。'
+            }), 400
+        
+        uploaded_file = request.files['image']
+        
+        if uploaded_file.filename == '':
+            return jsonify({
+                'success': False,
+                'error': '画像ファイルが選択されていません。'
+            }), 400
+        
+        filename = uploaded_file.filename.lower()
+        
+        mime_type_map = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.webp': 'image/webp',
+            '.heic': 'image/heic',
+            '.heif': 'image/heif'
+        }
+        
+        file_ext = None
+        for ext in mime_type_map.keys():
+            if filename.endswith(ext):
+                file_ext = ext
+                break
+        
+        if not file_ext:
+            return jsonify({
+                'success': False,
+                'error': 'サポートされていない画像形式です。JPEG, PNG, WebP, HEICのいずれかを使用してください。'
+            }), 400
+        
+        mime_type = mime_type_map[file_ext]
+        image_data = uploaded_file.read()
+        
+        logging.info(f"Received image: {uploaded_file.filename}, size: {len(image_data)} bytes, type: {mime_type}")
+        
+        max_size = 20 * 1024 * 1024
+        if len(image_data) > max_size:
+            return jsonify({
+                'success': False,
+                'error': f'画像サイズが大きすぎます。20MB以下の画像を使用してください。'
+            }), 400
+        
+        user_id = request.form.get('user_id')
+        
+        try:
+            result = recipe_extractor.extract_recipe_from_image(image_data, mime_type)
+            
+            return jsonify({
+                'success': True,
+                'dish_name': result.get('dish_name'),
+                'servings': result.get('servings'),
+                'cooking_time': result.get('cooking_time'),
+                'ingredients': result.get('ingredients', []),
+                'steps': result.get('steps', []),
+                'tips': result.get('tips'),
+                'ai_model': result.get('ai_model'),
+                'tokens_used': result.get('tokens_used', 0),
+                'input_tokens': result.get('input_tokens', 0),
+                'output_tokens': result.get('output_tokens', 0)
+            }), 200
+            
+        except ValueError as e:
+            logging.warning(f"Image recipe extraction failed: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 400
+            
+        except Exception as e:
+            logging.error(f"Image recipe extraction error: {e}")
+            return jsonify({
+                'success': False,
+                'error': f'画像からのレシピ抽出に失敗しました: {str(e)}'
+            }), 500
+    
+    except Exception as e:
+        logging.error(f"Error in extract_recipe_from_image: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'サーバーエラーが発生しました: {str(e)}'
+        }), 500
+
+
 @api_bp.route('/test/extract-recipe', methods=['POST'])
 def test_extract_recipe():
     """
