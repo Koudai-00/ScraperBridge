@@ -130,11 +130,11 @@ class RecipeExtractor:
         else:
             extraction_flow.append("レシピなし")
 
-        # 動画解析はGemini API直接使用（gemini-2.0-flash-lite）
+        # 動画解析はGemini API直接使用（gemini-2.0-flash-lite）- YouTube URLを直接渡す方式
         video_model = 'gemini-2.0-flash-lite'
-        logging.info(f"Extracting recipe from video using Gemini API ({video_model})...")
+        logging.info(f"Extracting recipe from YouTube video using URL-based Gemini API ({video_model})...")
         extraction_flow.append("動画解析")
-        result = self._extract_recipe_with_gemini_model(video_url, video_model)
+        result = self._extract_recipe_from_youtube_url(video_url, video_model)
         result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
         
         # 翻訳が必要な場合は翻訳
@@ -172,6 +172,79 @@ class RecipeExtractor:
             match = re.search(pattern, url)
             if match: return match.group(1)
         return ""
+
+    def _extract_recipe_from_youtube_url(self, video_url: str, model_name: str = 'gemini-2.0-flash-lite') -> Dict[str, Any]:
+        """
+        YouTube動画からレシピを抽出（URL直接方式）
+        
+        yt-dlpでのダウンロードを行わず、GeminiにYouTube URLを直接渡して解析する。
+        これによりCloud Run等のサーバー環境でのボット検出問題を回避できる。
+        """
+        try:
+            self._ensure_gemini_initialized()
+            
+            video_id = self._extract_youtube_id(video_url)
+            if not video_id:
+                raise ValueError("Invalid YouTube URL")
+            
+            youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+            logging.info(f"Analyzing YouTube video via URL: {youtube_url} using {model_name}")
+            
+            model = genai.GenerativeModel(model_name)
+            
+            prompt = """
+この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
+{"ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}
+動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。
+"""
+            
+            video_file_data = {
+                "file_data": {
+                    "file_uri": youtube_url,
+                    "mime_type": "video/mp4"
+                }
+            }
+            
+            logging.info(f"Sending YouTube URL to Gemini ({model_name})...")
+            response = model.generate_content([video_file_data, prompt])
+            
+            raw_text = response.text.strip()
+            logging.debug(f"Gemini raw response: {raw_text[:200]}...")
+            
+            recipe_text = None
+            try:
+                json_text = re.sub(r'^```json\s*|\s*```$', '', raw_text, flags=re.MULTILINE).strip()
+                recipe_json = json.loads(json_text)
+                if recipe_json.get('error'):
+                    raise ValueError("No recipe found in video")
+                if not recipe_json.get('ingredients') or not recipe_json.get('steps'):
+                    raise json.JSONDecodeError("Missing required fields", json_text, 0)
+                recipe_text = self._convert_json_to_text(recipe_json)
+                logging.info("Successfully parsed JSON response from Gemini (URL-based)")
+            except json.JSONDecodeError:
+                logging.warning("Failed to parse JSON, using text fallback")
+                recipe_text = self._clean_recipe_text(raw_text)
+            
+            if "レシピが見つかりませんでした" in recipe_text:
+                raise ValueError("No recipe found in video")
+            if not self._validate_recipe_structure(recipe_text):
+                raise ValueError("Incomplete recipe: missing ingredients or steps")
+            
+            tokens_info = self._estimate_tokens(response)
+            return {
+                'recipe_text': recipe_text,
+                'extraction_method': 'ai_video',
+                'ai_model': model_name,
+                'tokens_used': tokens_info.get('total', 0),
+                'input_tokens': tokens_info.get('input', 0),
+                'output_tokens': tokens_info.get('output', 0),
+                'refinement_status': 'not_applicable',
+                'refinement_error': None
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in _extract_recipe_from_youtube_url: {e}")
+            raise
 
     def _extract_tiktok_id(self, url: str) -> str:
         """TikTok動画IDを抽出"""
