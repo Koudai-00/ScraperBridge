@@ -607,6 +607,10 @@ class RecipeExtractorTest {
         this.refinementErrorText = document.getElementById('refinementErrorText');
         this.extractionFlowText = document.getElementById('extractionFlowText');
         this.recipeTextDisplay = document.getElementById('recipeTextDisplay');
+        this.ingredientsList = document.getElementById('ingredientsList');
+        this.stepsList = document.getElementById('stepsList');
+        this.tipsSection = document.getElementById('tipsSection');
+        this.tipsText = document.getElementById('tipsText');
         this.clearBtn = document.getElementById('clearRecipeResults');
     }
 
@@ -767,7 +771,57 @@ class RecipeExtractorTest {
 
         this.recipeTextDisplay.textContent = result.recipe_text;
 
+        // Display structured ingredients
+        if (this.ingredientsList) {
+            this.ingredientsList.innerHTML = '';
+            if (result.ingredients && result.ingredients.length > 0) {
+                result.ingredients.forEach(ing => {
+                    const li = document.createElement('li');
+                    li.className = 'mb-1';
+                    if (ing.amount) {
+                        li.innerHTML = `<span class="text-info">${this.escapeHtml(ing.name)}</span> <span class="text-muted">${this.escapeHtml(ing.amount)}</span>`;
+                    } else {
+                        li.innerHTML = `<span class="text-info">${this.escapeHtml(ing.name)}</span>`;
+                    }
+                    this.ingredientsList.appendChild(li);
+                });
+            } else {
+                this.ingredientsList.innerHTML = '<li class="text-muted">材料情報なし</li>';
+            }
+        }
+
+        // Display structured steps
+        if (this.stepsList) {
+            this.stepsList.innerHTML = '';
+            if (result.steps && result.steps.length > 0) {
+                result.steps.forEach(step => {
+                    const li = document.createElement('li');
+                    li.className = 'mb-2';
+                    li.textContent = step;
+                    this.stepsList.appendChild(li);
+                });
+            } else {
+                this.stepsList.innerHTML = '<li class="text-muted">手順情報なし</li>';
+            }
+        }
+
+        // Display tips
+        if (this.tipsSection && this.tipsText) {
+            if (result.tips) {
+                this.tipsSection.style.display = 'block';
+                this.tipsText.textContent = result.tips;
+            } else {
+                this.tipsSection.style.display = 'none';
+            }
+        }
+
         this.resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     clearResults() {
@@ -775,6 +829,10 @@ class RecipeExtractorTest {
         this.resultsSection.style.display = 'none';
         this.loadingSection.style.display = 'none';
         this.recipeTextDisplay.textContent = '';
+        if (this.ingredientsList) this.ingredientsList.innerHTML = '';
+        if (this.stepsList) this.stepsList.innerHTML = '';
+        if (this.tipsSection) this.tipsSection.style.display = 'none';
+        if (this.tipsText) this.tipsText.textContent = '';
     }
 }
 

@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import psycopg2
 from functools import wraps
@@ -11,6 +12,95 @@ from layout_analyzer import LayoutAnalyzer
 
 # Create blueprint for API routes
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+def parse_recipe_text(recipe_text: str) -> dict:
+    """
+    レシピテキストを構造化データに変換
+    
+    入力例:
+    【材料】
+    ・玉ねぎ 1個
+    ・豚肉 200g
+    
+    【作り方】
+    1. 玉ねぎを切る
+    2. 炒める
+    
+    【コツ・ポイント】
+    弱火でじっくり炒める
+    
+    出力:
+    {
+        'ingredients': [{'name': '玉ねぎ', 'amount': '1個'}, ...],
+        'steps': ['玉ねぎを切る', '炒める'],
+        'tips': '弱火でじっくり炒める'
+    }
+    """
+    if not recipe_text:
+        return {'ingredients': [], 'steps': [], 'tips': None}
+    
+    ingredients = []
+    steps = []
+    tips = None
+    
+    lines = recipe_text.strip().split('\n')
+    current_section = None
+    tips_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        if '【材料】' in line or '材料' in line and len(line) < 10:
+            current_section = 'ingredients'
+            continue
+        elif '【作り方】' in line or '【手順】' in line or ('作り方' in line and len(line) < 10):
+            current_section = 'steps'
+            continue
+        elif '【コツ】' in line or '【ポイント】' in line or '【コツ・ポイント】' in line or ('コツ' in line and len(line) < 15):
+            current_section = 'tips'
+            continue
+        
+        if current_section == 'ingredients':
+            line = re.sub(r'^[・\-\*•]\s*', '', line)
+            
+            match = re.match(r'^(.+?)[\s:：]+(.+)$', line)
+            if match:
+                name = match.group(1).strip()
+                amount = match.group(2).strip()
+            else:
+                parts = line.rsplit(' ', 1)
+                if len(parts) == 2 and (
+                    any(c.isdigit() for c in parts[1]) or
+                    any(unit in parts[1] for unit in ['個', 'g', 'ml', '本', '枚', '切れ', '大さじ', '小さじ', '適量', '少々'])
+                ):
+                    name = parts[0].strip()
+                    amount = parts[1].strip()
+                else:
+                    name = line
+                    amount = ''
+            
+            if name:
+                ingredients.append({'name': name, 'amount': amount})
+        
+        elif current_section == 'steps':
+            step_text = re.sub(r'^[\d０-９]+[\.．\.\)）]\s*', '', line)
+            if step_text:
+                steps.append(step_text)
+        
+        elif current_section == 'tips':
+            tips_lines.append(line)
+    
+    if tips_lines:
+        tips = '\n'.join(tips_lines)
+    
+    return {
+        'ingredients': ingredients,
+        'steps': steps,
+        'tips': tips
+    }
 
 # Initialize metadata extractor
 extractor = MetadataExtractor()
@@ -642,9 +732,13 @@ def extract_recipe():
                     """, (user_id, platform, unique_video_id, 'CACHE_HIT', recipe_id, 0))
                     conn.commit()
 
+                    parsed = parse_recipe_text(recipe_text)
                     return jsonify({
                         'success': True,
                         'recipe_text': recipe_text,
+                        'ingredients': parsed['ingredients'],
+                        'steps': parsed['steps'],
+                        'tips': parsed['tips'],
                         'extraction_method': extraction_method,
                         'cached': True,
                         'cost_usd': 0.0
@@ -698,9 +792,13 @@ def extract_recipe():
 
                     conn.commit()
 
+            parsed = parse_recipe_text(recipe_text)
             return jsonify({
                 'success': True,
                 'recipe_text': recipe_text,
+                'ingredients': parsed['ingredients'],
+                'steps': parsed['steps'],
+                'tips': parsed['tips'],
                 'extraction_method': extraction_method,
                 'cached': False,
                 'cost_usd': cost_usd
@@ -1391,9 +1489,15 @@ def test_extract_recipe():
         try:
             result = recipe_extractor.extract_recipe_with_model(video_url, model_name)
 
+            recipe_text = result['recipe_text']
+            parsed = parse_recipe_text(recipe_text)
+            
             return jsonify({
                 'success': True,
-                'recipe_text': result['recipe_text'],
+                'recipe_text': recipe_text,
+                'ingredients': parsed['ingredients'],
+                'steps': parsed['steps'],
+                'tips': parsed['tips'],
                 'extraction_method': result['extraction_method'],
                 'extraction_flow': result.get('extraction_flow', ''),
                 'ai_model': result.get('ai_model'),
