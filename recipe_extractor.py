@@ -492,6 +492,14 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                         for k in ['【作り方】', '作り方', 'Steps', '手順'])
         return has_ingredients and has_steps
 
+    def _validate_recipe_json_has_steps(self, recipe_json: dict) -> bool:
+        """JSONレシピにstepsが実質的に含まれているか検証"""
+        steps = recipe_json.get('steps', [])
+        if not isinstance(steps, list):
+            return False
+        non_empty_steps = [s for s in steps if isinstance(s, str) and s.strip()]
+        return len(non_empty_steps) > 0
+
     def _refine_recipe_with_gemini(self, raw_recipe_text: str, model_name: str = 'gemini-1.5-flash') -> Dict[str, Any]:
         """
         Geminiを使って説明欄/コメントから抽出したレシピを整形する
@@ -527,7 +535,9 @@ amountには数値のみ、unitには単位のみを入れてください。「�
 
 【重要な判断基準】
 - 実際の料理レシピとは「材料（分量付き）」と「作り方（調理手順）」が両方記載されているものです
+- 材料リストのみで作り方/手順が記載されていない場合は、レシピとして成立しません。{"no_recipe": true}を返してください。
 - 以下はレシピではありません：
+  - 材料リストのみ（作り方なし）
   - アプリやサービスの宣伝文
   - 書籍の紹介リンク
   - SNSアカウントの一覧
@@ -598,7 +608,6 @@ amountには数値のみ、unitには単位のみを入れてください。「�
 
                 recipe_json = json.loads(response_text)
 
-                # レシピが含まれていない場合
                 if recipe_json.get('no_recipe'):
                     logging.info("Gemini determined no recipe in text")
                     result['refinement_status'] = 'no_recipe'
@@ -611,7 +620,12 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                     result['refinement_error'] = recipe_json['error']
                     return result
 
-                # JSONをテキスト形式に変換
+                if not self._validate_recipe_json_has_steps(recipe_json):
+                    logging.info("Gemini returned ingredients only (no steps), treating as no_recipe")
+                    result['refinement_status'] = 'no_recipe'
+                    result['refinement_error'] = 'AI抽出結果に作り方が含まれていません（材料のみ）'
+                    return result
+
                 refined_text = self._convert_json_to_text(recipe_json)
 
                 if refined_text and len(refined_text) > 50:
@@ -666,7 +680,9 @@ amountには数値のみ、unitには単位のみを入れてください。「�
 
 【重要な判断基準】
 - 実際の料理レシピとは「材料（分量付き）」と「作り方（調理手順）」が両方記載されているものです
+- 材料リストのみで作り方/手順が記載されていない場合は、レシピとして成立しません。{"no_recipe": true}を返してください。
 - 以下はレシピではありません：
+  - 材料リストのみ（作り方なし）
   - アプリやサービスの宣伝文
   - 書籍の紹介リンク
   - SNSアカウントの一覧
@@ -751,6 +767,12 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                     result['refinement_error'] = recipe_json['error']
                     return result
 
+                if not self._validate_recipe_json_has_steps(recipe_json):
+                    logging.info(f"OpenRouter returned ingredients only (no steps), treating as no_recipe")
+                    result['refinement_status'] = 'no_recipe'
+                    result['refinement_error'] = 'AI抽出結果に作り方が含まれていません（材料のみ）'
+                    return result
+
                 refined_text = self._convert_json_to_text(recipe_json)
                 if refined_text and len(refined_text) > 50:
                     logging.info(f"Recipe successfully refined with OpenRouter ({result['model_used']})")
@@ -827,6 +849,18 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                             'input_tokens': input_tokens,
                             'output_tokens': output_tokens,
                             'refinement_error': None
+                        }
+                    
+                    if not self._validate_recipe_json_has_steps(recipe_json):
+                        logging.info("OpenRouter auto returned ingredients only (no steps), treating as no_recipe")
+                        return {
+                            'text': None,
+                            'model_used': model_used,
+                            'refinement_status': 'no_recipe',
+                            'refinement_tokens': tokens_used,
+                            'input_tokens': input_tokens,
+                            'output_tokens': output_tokens,
+                            'refinement_error': 'AI抽出結果に作り方が含まれていません（材料のみ）'
                         }
                     
                     formatted_text = self._convert_json_to_text(recipe_json)
