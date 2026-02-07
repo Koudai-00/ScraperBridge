@@ -124,8 +124,18 @@ class OpenRouterClient:
                     time.sleep(0.5)
                     continue
                 else:
-                    error_msg = response.json().get("error", {}).get("message", response.text)
-                    logging.warning(f"Error from {model}: {error_msg}")
+                    try:
+                        error_data = response.json()
+                        error_msg = error_data.get("error", {}).get("message", response.text)
+                        error_code = error_data.get("error", {}).get("code", "unknown")
+                        error_metadata = error_data.get("error", {}).get("metadata", {})
+                        logging.warning(f"Error from {model} (HTTP {response.status_code}, code={error_code}): {error_msg}")
+                        if error_metadata:
+                            logging.warning(f"Error metadata from {model}: {error_metadata}")
+                        logging.debug(f"Full error response from {model}: {error_data}")
+                    except Exception:
+                        error_msg = response.text
+                        logging.warning(f"Error from {model} (HTTP {response.status_code}): {error_msg}")
                     last_error = error_msg
                     continue
                     
