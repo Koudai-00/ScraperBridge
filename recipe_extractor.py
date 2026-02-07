@@ -194,7 +194,12 @@ class RecipeExtractor:
             
             prompt = """
 この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
-{"ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位"}], "steps": ["手順1"], "tips": ["コツ1"]}
+
+材料のunitには以下のような適切な単位を設定してください：
+g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
+amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
+
 動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。
 """
             
@@ -437,15 +442,32 @@ class RecipeExtractor:
         if recipe_json.get('ingredients'):
             parts.append("\n【材料】")
             for i in recipe_json['ingredients']:
-                parts.append(f"- {i}")
+                if isinstance(i, dict):
+                    name = i.get('name', '')
+                    amount = i.get('amount', '')
+                    unit = i.get('unit', '')
+                    if amount and unit:
+                        parts.append(f"- {name} {amount}{unit}")
+                    elif amount:
+                        parts.append(f"- {name} {amount}")
+                    elif unit:
+                        parts.append(f"- {name} {unit}")
+                    else:
+                        parts.append(f"- {name}")
+                else:
+                    parts.append(f"- {i}")
         if recipe_json.get('steps'):
             parts.append("\n【作り方】")
-            for i, s in enumerate(recipe_json['steps'], 1):
-                parts.append(f"{i}. {s}")
+            for idx, s in enumerate(recipe_json['steps'], 1):
+                parts.append(f"{idx}. {s}")
         if recipe_json.get('tips'):
             parts.append("\n【コツ・ポイント】")
-            for t in recipe_json['tips']:
-                parts.append(f"- {t}")
+            tips = recipe_json['tips']
+            if isinstance(tips, list):
+                for t in tips:
+                    parts.append(f"- {t}")
+            else:
+                parts.append(f"- {tips}")
         return '\n'.join(parts)
 
     def _validate_recipe_structure(self, recipe_text: str) -> bool:
@@ -503,7 +525,11 @@ class RecipeExtractor:
 
 【レシピが含まれている場合】
 以下のJSON形式で返してください：
-{"ingredients": ["材料1: 分量", "材料2: 分量"], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位"}], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
+
+材料のunitには以下のような適切な単位を設定してください：
+g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
+amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
 
 ※除去する情報：宣伝文、ハッシュタグ、SNSリンク、BGM情報、チャンネル登録のお願い等
 
@@ -632,7 +658,11 @@ class RecipeExtractor:
 
 【レシピが含まれている場合】
 以下のJSON形式で返してください：
-{"ingredients": ["材料1: 分量", "材料2: 分量"], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位"}], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
+
+材料のunitには以下のような適切な単位を設定してください：
+g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
+amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
 
 ※除去する情報：宣伝文、ハッシュタグ、SNSリンク、BGM情報、チャンネル登録のお願い等
 
@@ -1292,7 +1322,12 @@ class RecipeExtractor:
             model = genai.GenerativeModel(model_name)
             prompt = """
 この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
-{"ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位"}], "steps": ["手順1"], "tips": ["コツ1"]}
+
+材料のunitには以下のような適切な単位を設定してください：
+g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
+amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
+
 動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。
 """
             logging.info(f"Sending video to Gemini ({model_name})...")
@@ -1401,7 +1436,12 @@ class RecipeExtractor:
             model = genai.GenerativeModel(model_name)
             prompt = """
 この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
-{"ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位"}], "steps": ["手順1"], "tips": ["コツ1"]}
+
+材料のunitには以下のような適切な単位を設定してください：
+g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
+amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
+
 動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。
 """
             logging.info(f"Sending video to Gemini ({model_name})...")
@@ -1586,7 +1626,7 @@ class RecipeExtractor:
             {
                 'success': True,
                 'dish_name': '料理名',
-                'ingredients': [{'name': '材料名', 'amount': '分量'}],
+                'ingredients': [{'name': '材料名', 'amount': '数量', 'unit': '単位'}],
                 'steps': ['手順1', '手順2', ...],
                 'tips': 'コツや注意点',
                 'servings': '2人分',
@@ -1622,9 +1662,9 @@ class RecipeExtractor:
     "servings": "2人分",
     "cooking_time": "30分",
     "ingredients": [
-        {"name": "鶏もも肉", "amount": "300g"},
-        {"name": "玉ねぎ", "amount": "1個"},
-        {"name": "醤油", "amount": "大さじ2"}
+        {"name": "鶏もも肉", "amount": "300", "unit": "g"},
+        {"name": "玉ねぎ", "amount": "1", "unit": "個"},
+        {"name": "醤油", "amount": "2", "unit": "大さじ"}
     ],
     "steps": [
         "鶏肉を一口大に切る",
@@ -1634,6 +1674,11 @@ class RecipeExtractor:
     "tips": "鶏肉は常温に戻してから調理すると柔らかく仕上がります"
 }
 ```
+
+## 材料のunit（単位）について
+unitには以下のような適切な単位を設定してください：
+g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
+amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
 
 ## 注意事項
 - 画像から読み取れない情報は null にしてください

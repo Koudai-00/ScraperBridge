@@ -14,6 +14,66 @@ from layout_analyzer import LayoutAnalyzer
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 
+def _split_amount_unit(amount_raw: str) -> tuple:
+    """
+    分量文字列を数量と単位に分割する
+    例: '300g' -> ('300', 'g'), '大さじ2' -> ('2', '大さじ'), '適量' -> ('', '適量')
+    """
+    if not amount_raw:
+        return ('', '')
+    
+    has_digits = any(c.isdigit() for c in amount_raw)
+    
+    unit_keywords = ['適量', '少々', 'お好みで', '少量', 'ひとつまみ', 'ひとかけ']
+    for kw in unit_keywords:
+        if kw in amount_raw:
+            if has_digits:
+                num = re.sub(r'[^\d０-９./／]', '', amount_raw).strip()
+                return (num, kw) if num else ('', kw)
+            return ('', kw)
+    
+    prefix_units = ['大さじ', '小さじ', 'カップ']
+    for pu in prefix_units:
+        if pu in amount_raw:
+            num = amount_raw.replace(pu, '').strip()
+            return (num, pu)
+    
+    match = re.match(r'^([\d０-９./／＋+½¼¾⅓⅔]+(?:\s*[-～〜]\s*[\d０-９./／]+)?)\s*(.+)$', amount_raw)
+    if match:
+        return (match.group(1).strip(), match.group(2).strip())
+    
+    match2 = re.match(r'^(.+?)([\d０-９./／]+)$', amount_raw)
+    if match2:
+        return (match2.group(2).strip(), match2.group(1).strip())
+    
+    if has_digits:
+        return (amount_raw, '')
+    
+    return ('', amount_raw)
+
+
+def _normalize_ingredient(ing):
+    """
+    材料データを正規化して {name, amount, unit} 形式にする
+    文字列形式（旧フォーマット）やunit無しのdictにも対応
+    """
+    if isinstance(ing, str):
+        match = re.match(r'^(.+?)[\s:：]+(.+)$', ing)
+        if match:
+            name = match.group(1).strip()
+            amount_raw = match.group(2).strip()
+            amount, unit = _split_amount_unit(amount_raw)
+            return {'name': name, 'amount': amount, 'unit': unit}
+        return {'name': ing, 'amount': '', 'unit': ''}
+    if isinstance(ing, dict):
+        return {
+            'name': ing.get('name', ''),
+            'amount': str(ing.get('amount', '')),
+            'unit': ing.get('unit', '')
+        }
+    return {'name': str(ing), 'amount': '', 'unit': ''}
+
+
 def parse_recipe_text(recipe_text: str) -> dict:
     """
     レシピテキストを構造化データに変換
@@ -32,7 +92,7 @@ def parse_recipe_text(recipe_text: str) -> dict:
     
     出力:
     {
-        'ingredients': [{'name': '玉ねぎ', 'amount': '1個'}, ...],
+        'ingredients': [{'name': '玉ねぎ', 'amount': '1', 'unit': '個'}, ...],
         'steps': ['玉ねぎを切る', '炒める'],
         'tips': '弱火でじっくり炒める'
     }
@@ -69,21 +129,22 @@ def parse_recipe_text(recipe_text: str) -> dict:
             match = re.match(r'^(.+?)[\s:：]+(.+)$', line)
             if match:
                 name = match.group(1).strip()
-                amount = match.group(2).strip()
+                amount_raw = match.group(2).strip()
             else:
                 parts = line.rsplit(' ', 1)
                 if len(parts) == 2 and (
                     any(c.isdigit() for c in parts[1]) or
-                    any(unit in parts[1] for unit in ['個', 'g', 'ml', '本', '枚', '切れ', '大さじ', '小さじ', '適量', '少々'])
+                    any(u in parts[1] for u in ['個', 'g', 'ml', '本', '枚', '切れ', '大さじ', '小さじ', '適量', '少々'])
                 ):
                     name = parts[0].strip()
-                    amount = parts[1].strip()
+                    amount_raw = parts[1].strip()
                 else:
                     name = line
-                    amount = ''
+                    amount_raw = ''
             
             if name:
-                ingredients.append({'name': name, 'amount': amount})
+                amount, unit = _split_amount_unit(amount_raw)
+                ingredients.append({'name': name, 'amount': amount, 'unit': unit})
         
         elif current_section == 'steps':
             step_text = re.sub(r'^[\d０-９]+[\.．\.\)）]\s*', '', line)
@@ -1416,7 +1477,7 @@ def extract_recipe_from_image():
                 'dish_name': result.get('dish_name'),
                 'servings': result.get('servings'),
                 'cooking_time': result.get('cooking_time'),
-                'ingredients': result.get('ingredients', []),
+                'ingredients': [_normalize_ingredient(i) for i in result.get('ingredients', [])],
                 'steps': result.get('steps', []),
                 'tips': result.get('tips'),
                 'ai_model': result.get('ai_model'),
