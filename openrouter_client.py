@@ -2,11 +2,10 @@
 OpenRouter API Client with automatic fallback support.
 Provides access to Japanese-capable AI models with automatic fallback on errors.
 
-Model Priority Order (4 models only):
-1. google/gemma-3-27b-it:free
-2. google/gemini-2.0-flash-exp:free
-3. google/gemma-3-12b-it:free
-4. gemini-2.0-flash-lite (via Gemini API, fallback)
+Model Priority Order (3 models only):
+1. google/gemma-3-27b-it:free (OpenRouter)
+2. google/gemma-3-12b-it:free (OpenRouter)
+3. gemini-2.0-flash-lite (via Gemini API, fallback)
 
 Note: Video analysis uses Gemini API directly (gemini-2.0-flash-lite), not OpenRouter.
 """
@@ -26,8 +25,7 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 # 4番目はGemini APIを直接使用（gemini-2.0-flash-lite）
 TEXT_MODELS = [
     "google/gemma-3-27b-it:free",           # 1位
-    "google/gemini-2.0-flash-exp:free",     # 2位
-    "google/gemma-3-12b-it:free",           # 3位
+    "google/gemma-3-12b-it:free",           # 2位
 ]
 
 # 動画解析はGemini API直接使用のため、OpenRouterでは使用しない
@@ -196,12 +194,8 @@ class OpenRouterClient:
         """
         messages = [
             {
-                "role": "system",
-                "content": "あなたは優秀な翻訳者です。与えられたテキストを自然な日本語に翻訳してください。レシピの場合は、材料名や調理用語を日本語で適切に表現してください。"
-            },
-            {
                 "role": "user",
-                "content": f"以下のテキストを日本語に翻訳してください。レシピ形式を維持し、【材料】【作り方】などのセクション見出しは日本語で表記してください。\n\n{text}"
+                "content": f"あなたは優秀な翻訳者です。与えられたテキストを自然な日本語に翻訳してください。レシピの場合は、材料名や調理用語を日本語で適切に表現してください。\n\n以下のテキストを日本語に翻訳してください。レシピ形式を維持し、【材料】【作り方】などのセクション見出しは日本語で表記してください。\n\n{text}"
             }
         ]
         
@@ -221,8 +215,8 @@ class OpenRouterClient:
         """
         messages = [
             {
-                "role": "system",
-                "content": """あなたは料理レシピの整理専門家です。与えられたテキストからレシピ情報のみを抽出し、整形してください。
+                "role": "user",
+                "content": f"""あなたは料理レシピの整理専門家です。与えられたテキストからレシピ情報のみを抽出し、整形してください。
 
 以下の情報は必ず除外してください：
 - BGM情報、音楽クレジット（BGM: ○○、Music by、♪、使用音源など）
@@ -234,14 +228,14 @@ class OpenRouterClient:
 - 動画投稿者の自己紹介
 
 レシピが含まれていない場合は、以下のJSONを返してください：
-{"no_recipe": true}
+{{"no_recipe": true}}
 
 レシピが含まれている場合は、以下のJSON形式で返してください：
-{"ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}"""
-            },
-            {
-                "role": "user",
-                "content": raw_text
+{{"ingredients": ["材料1: 分量"], "steps": ["手順1"], "tips": ["コツ1"]}}
+
+以下のテキストからレシピを抽出してください：
+
+{raw_text}"""
             }
         ]
         

@@ -640,8 +640,7 @@ class RecipeExtractor:
 """ + raw_recipe_text
 
         messages = [
-            {"role": "system", "content": "あなたは料理レシピの整理専門家です。与えられたテキストからレシピ情報のみを抽出し、JSON形式で返してください。"},
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": "あなたは料理レシピの整理専門家です。与えられたテキストからレシピ情報のみを抽出し、JSON形式で返してください。\n\n" + prompt}
         ]
 
         try:
