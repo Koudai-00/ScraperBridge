@@ -800,26 +800,33 @@ def extract_recipe():
                     recipe_id, recipe_text, extraction_method = cached_result
                     logging.info(f"Cache hit for {platform}:{unique_video_id}")
 
-                    # キャッシュヒットをログに記録
-                    cur.execute(
-                        """
-                        INSERT INTO recipe_extraction_logs 
-                        (user_id, platform, unique_video_id, status, recipe_id, calculated_cost_usd)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, (user_id, platform, unique_video_id, 'CACHE_HIT', recipe_id, 0))
-                    conn.commit()
-
                     parsed = parse_recipe_text(recipe_text)
-                    return jsonify({
-                        'success': True,
-                        'recipe_text': recipe_text,
-                        'ingredients': parsed['ingredients'],
-                        'steps': parsed['steps'],
-                        'tips': parsed['tips'],
-                        'extraction_method': extraction_method,
-                        'cached': True,
-                        'cost_usd': 0.0
-                    }), 200
+
+                    if not parsed['steps']:
+                        logging.info(f"Cached recipe has no steps, invalidating cache for {platform}:{unique_video_id}")
+                        cur.execute(
+                            "DELETE FROM extracted_recipes WHERE recipe_id = %s",
+                            (recipe_id,))
+                        conn.commit()
+                    else:
+                        cur.execute(
+                            """
+                            INSERT INTO recipe_extraction_logs 
+                            (user_id, platform, unique_video_id, status, recipe_id, calculated_cost_usd)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """, (user_id, platform, unique_video_id, 'CACHE_HIT', recipe_id, 0))
+                        conn.commit()
+
+                        return jsonify({
+                            'success': True,
+                            'recipe_text': recipe_text,
+                            'ingredients': parsed['ingredients'],
+                            'steps': parsed['steps'],
+                            'tips': parsed['tips'],
+                            'extraction_method': extraction_method,
+                            'cached': True,
+                            'cost_usd': 0.0
+                        }), 200
 
         # キャッシュなし - 新規抽出
         logging.info("No cache found, extracting recipe...")
@@ -842,21 +849,27 @@ def extract_recipe():
                 f"Recipe extracted successfully - Method: {extraction_method}, Cost: ${cost_usd}"
             )
 
-            # データベースに保存
+            parsed = parse_recipe_text(recipe_text)
+
+            if not parsed['steps']:
+                logging.warning("Extracted recipe has no steps, not caching")
+
+            # データベースに保存（stepsがある場合のみキャッシュ）
             with get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    # extracted_recipesに保存
-                    cur.execute(
-                        """
-                        INSERT INTO extracted_recipes (platform, unique_video_id, extracted_text, extraction_method)
-                        VALUES (%s, %s, %s, %s)
-                        RETURNING recipe_id
-                    """, (platform, unique_video_id, recipe_text, extraction_method))
+                    recipe_id = None
+                    if parsed['steps']:
+                        cur.execute(
+                            """
+                            INSERT INTO extracted_recipes (platform, unique_video_id, extracted_text, extraction_method)
+                            VALUES (%s, %s, %s, %s)
+                            RETURNING recipe_id
+                        """, (platform, unique_video_id, recipe_text, extraction_method))
 
-                    result = cur.fetchone()
-                    if not result:
-                        raise ValueError("Failed to save recipe to database")
-                    recipe_id = result[0]
+                        result_row = cur.fetchone()
+                        if not result_row:
+                            raise ValueError("Failed to save recipe to database")
+                        recipe_id = result_row[0]
 
                     # recipe_extraction_logsに保存
                     cur.execute(
@@ -869,7 +882,6 @@ def extract_recipe():
 
                     conn.commit()
 
-            parsed = parse_recipe_text(recipe_text)
             return jsonify({
                 'success': True,
                 'recipe_text': recipe_text,
