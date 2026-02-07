@@ -194,11 +194,17 @@ class RecipeExtractor:
             
             prompt = """
 この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
-{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位"}], "steps": ["手順1"], "tips": ["コツ1"]}
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位", "sub_amount": "重量換算の数量", "sub_unit": "重量換算の単位"}], "steps": ["手順1"], "tips": ["コツ1"]}
 
 材料のunitには以下のような適切な単位を設定してください：
 g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
 amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
+
+【重量換算（sub_amount / sub_unit）について】
+材料に「ズッキーニ1本(200g)」のように主単位と重量換算が併記されている場合：
+- amount: "1", unit: "本" （主単位）
+- sub_amount: "200", sub_unit: "g" （重量換算値）
+重量換算がない場合は sub_amount と sub_unit は空文字にしてください。
 
 動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。
 """
@@ -446,12 +452,20 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                     name = i.get('name', '')
                     amount = i.get('amount', '')
                     unit = i.get('unit', '')
+                    sub_amount = i.get('sub_amount', '')
+                    sub_unit = i.get('sub_unit', '')
+                    main_part = ''
                     if amount and unit:
-                        parts.append(f"- {name} {amount}{unit}")
+                        main_part = f"{amount}{unit}"
                     elif amount:
-                        parts.append(f"- {name} {amount}")
+                        main_part = f"{amount}"
                     elif unit:
-                        parts.append(f"- {name} {unit}")
+                        main_part = f"{unit}"
+                    sub_part = ''
+                    if sub_amount and sub_unit:
+                        sub_part = f"({sub_amount}{sub_unit})"
+                    if main_part:
+                        parts.append(f"- {name} {main_part}{sub_part}")
                     else:
                         parts.append(f"- {name}")
                 else:
@@ -525,11 +539,17 @@ amountには数値のみ、unitには単位のみを入れてください。「�
 
 【レシピが含まれている場合】
 以下のJSON形式で返してください：
-{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位"}], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位", "sub_amount": "重量換算の数量", "sub_unit": "重量換算の単位"}], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
 
 材料のunitには以下のような適切な単位を設定してください：
 g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
 amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
+
+【重量換算（sub_amount / sub_unit）について】
+材料に「ズッキーニ1本(200g)」のように主単位と重量換算が併記されている場合：
+- amount: "1", unit: "本" （主単位）
+- sub_amount: "200", sub_unit: "g" （重量換算値）
+重量換算がない場合は sub_amount と sub_unit は空文字にしてください。
 
 ※除去する情報：宣伝文、ハッシュタグ、SNSリンク、BGM情報、チャンネル登録のお願い等
 
@@ -658,11 +678,17 @@ amountには数値のみ、unitには単位のみを入れてください。「�
 
 【レシピが含まれている場合】
 以下のJSON形式で返してください：
-{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位"}], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位", "sub_amount": "重量換算の数量", "sub_unit": "重量換算の単位"}], "steps": ["手順1", "手順2"], "tips": ["コツ1"]}
 
 材料のunitには以下のような適切な単位を設定してください：
 g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
 amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
+
+【重量換算（sub_amount / sub_unit）について】
+材料に「ズッキーニ1本(200g)」のように主単位と重量換算が併記されている場合：
+- amount: "1", unit: "本" （主単位）
+- sub_amount: "200", sub_unit: "g" （重量換算値）
+重量換算がない場合は sub_amount と sub_unit は空文字にしてください。
 
 ※除去する情報：宣伝文、ハッシュタグ、SNSリンク、BGM情報、チャンネル登録のお願い等
 
@@ -1322,11 +1348,17 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             model = genai.GenerativeModel(model_name)
             prompt = """
 この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
-{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位"}], "steps": ["手順1"], "tips": ["コツ1"]}
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位", "sub_amount": "重量換算の数量", "sub_unit": "重量換算の単位"}], "steps": ["手順1"], "tips": ["コツ1"]}
 
 材料のunitには以下のような適切な単位を設定してください：
 g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
 amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
+
+【重量換算（sub_amount / sub_unit）について】
+材料に「ズッキーニ1本(200g)」のように主単位と重量換算が併記されている場合：
+- amount: "1", unit: "本" （主単位）
+- sub_amount: "200", sub_unit: "g" （重量換算値）
+重量換算がない場合は sub_amount と sub_unit は空文字にしてください。
 
 動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。
 """
@@ -1436,11 +1468,17 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             model = genai.GenerativeModel(model_name)
             prompt = """
 この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
-{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位"}], "steps": ["手順1"], "tips": ["コツ1"]}
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位", "sub_amount": "重量換算の数量", "sub_unit": "重量換算の単位"}], "steps": ["手順1"], "tips": ["コツ1"]}
 
 材料のunitには以下のような適切な単位を設定してください：
 g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
 amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
+
+【重量換算（sub_amount / sub_unit）について】
+材料に「ズッキーニ1本(200g)」のように主単位と重量換算が併記されている場合：
+- amount: "1", unit: "本" （主単位）
+- sub_amount: "200", sub_unit: "g" （重量換算値）
+重量換算がない場合は sub_amount と sub_unit は空文字にしてください。
 
 動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。
 """
@@ -1626,7 +1664,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             {
                 'success': True,
                 'dish_name': '料理名',
-                'ingredients': [{'name': '材料名', 'amount': '数量', 'unit': '単位'}],
+                'ingredients': [{'name': '材料名', 'amount': '数量', 'unit': '単位', 'sub_amount': '重量換算数量', 'sub_unit': '重量換算単位'}],
                 'steps': ['手順1', '手順2', ...],
                 'tips': 'コツや注意点',
                 'servings': '2人分',
@@ -1662,9 +1700,9 @@ amountには数値のみ、unitには単位のみを入れてください。「�
     "servings": "2人分",
     "cooking_time": "30分",
     "ingredients": [
-        {"name": "鶏もも肉", "amount": "300", "unit": "g"},
-        {"name": "玉ねぎ", "amount": "1", "unit": "個"},
-        {"name": "醤油", "amount": "2", "unit": "大さじ"}
+        {"name": "鶏もも肉", "amount": "300", "unit": "g", "sub_amount": "", "sub_unit": ""},
+        {"name": "玉ねぎ", "amount": "1", "unit": "個", "sub_amount": "200", "sub_unit": "g"},
+        {"name": "醤油", "amount": "2", "unit": "大さじ", "sub_amount": "", "sub_unit": ""}
     ],
     "steps": [
         "鶏肉を一口大に切る",
@@ -1679,6 +1717,12 @@ amountには数値のみ、unitには単位のみを入れてください。「�
 unitには以下のような適切な単位を設定してください：
 g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
 amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
+
+## 重量換算（sub_amount / sub_unit）について
+材料に「ズッキーニ1本(200g)」のように主単位と重量換算が併記されている場合：
+- amount: "1", unit: "本" （主単位）
+- sub_amount: "200", sub_unit: "g" （重量換算値）
+重量換算がない場合は sub_amount と sub_unit は空文字にしてください。
 
 ## 注意事項
 - 画像から読み取れない情報は null にしてください

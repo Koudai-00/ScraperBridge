@@ -54,24 +54,32 @@ def _split_amount_unit(amount_raw: str) -> tuple:
 
 def _normalize_ingredient(ing):
     """
-    材料データを正規化して {name, amount, unit} 形式にする
+    材料データを正規化して {name, amount, unit, sub_amount, sub_unit} 形式にする
     文字列形式（旧フォーマット）やunit無しのdictにも対応
     """
     if isinstance(ing, str):
+        sub_amount, sub_unit = '', ''
+        paren_match = re.search(r'[（(]([\d０-９./／]+)\s*([a-zA-Zぁ-んァ-ヶㅤ㎖㎗㎘㎎㎏]+)[）)]', ing)
+        if paren_match:
+            sub_amount = paren_match.group(1)
+            sub_unit = paren_match.group(2)
+            ing = ing[:paren_match.start()].strip()
         match = re.match(r'^(.+?)[\s:：]+(.+)$', ing)
         if match:
             name = match.group(1).strip()
             amount_raw = match.group(2).strip()
             amount, unit = _split_amount_unit(amount_raw)
-            return {'name': name, 'amount': amount, 'unit': unit}
-        return {'name': ing, 'amount': '', 'unit': ''}
+            return {'name': name, 'amount': amount, 'unit': unit, 'sub_amount': sub_amount, 'sub_unit': sub_unit}
+        return {'name': ing, 'amount': '', 'unit': '', 'sub_amount': sub_amount, 'sub_unit': sub_unit}
     if isinstance(ing, dict):
         return {
             'name': ing.get('name', ''),
             'amount': str(ing.get('amount', '')),
-            'unit': ing.get('unit', '')
+            'unit': ing.get('unit', ''),
+            'sub_amount': str(ing.get('sub_amount', '')),
+            'sub_unit': ing.get('sub_unit', '')
         }
-    return {'name': str(ing), 'amount': '', 'unit': ''}
+    return {'name': str(ing), 'amount': '', 'unit': '', 'sub_amount': '', 'sub_unit': ''}
 
 
 def parse_recipe_text(recipe_text: str) -> dict:
@@ -92,7 +100,7 @@ def parse_recipe_text(recipe_text: str) -> dict:
     
     出力:
     {
-        'ingredients': [{'name': '玉ねぎ', 'amount': '1', 'unit': '個'}, ...],
+        'ingredients': [{'name': '玉ねぎ', 'amount': '1', 'unit': '個', 'sub_amount': '', 'sub_unit': ''}, ...],
         'steps': ['玉ねぎを切る', '炒める'],
         'tips': '弱火でじっくり炒める'
     }
@@ -126,6 +134,14 @@ def parse_recipe_text(recipe_text: str) -> dict:
         if current_section == 'ingredients':
             line = re.sub(r'^[・\-\*•]\s*', '', line)
             
+            sub_amount, sub_unit = '', ''
+            paren_match = re.search(r'[（(]([\d０-９./／]+)\s*([a-zA-Zぁ-んァ-ヶㅤ㎖㎗㎘㎎㎏]+)[）)]', line)
+            if paren_match:
+                sub_amount = paren_match.group(1)
+                sub_unit = paren_match.group(2)
+                line = line[:paren_match.start()].strip() + line[paren_match.end():].strip()
+                line = line.strip()
+            
             match = re.match(r'^(.+?)[\s:：]+(.+)$', line)
             if match:
                 name = match.group(1).strip()
@@ -144,7 +160,7 @@ def parse_recipe_text(recipe_text: str) -> dict:
             
             if name:
                 amount, unit = _split_amount_unit(amount_raw)
-                ingredients.append({'name': name, 'amount': amount, 'unit': unit})
+                ingredients.append({'name': name, 'amount': amount, 'unit': unit, 'sub_amount': sub_amount, 'sub_unit': sub_unit})
         
         elif current_section == 'steps':
             step_text = re.sub(r'^[\d０-９]+[\.．\.\)）]\s*', '', line)
@@ -1397,8 +1413,8 @@ def extract_recipe_from_image():
         "servings": "4人分",
         "cooking_time": "30分",
         "ingredients": [
-            {"name": "じゃがいも", "amount": "4個"},
-            {"name": "牛肉", "amount": "200g"}
+            {"name": "じゃがいも", "amount": "4", "unit": "個", "sub_amount": "", "sub_unit": ""},
+            {"name": "牛肉", "amount": "200", "unit": "g", "sub_amount": "", "sub_unit": ""}
         ],
         "steps": [
             "じゃがいもを一口大に切る",

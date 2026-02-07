@@ -778,6 +778,8 @@ class RecipeExtractorTest {
                 result.ingredients.forEach(ing => {
                     const li = document.createElement('li');
                     li.className = 'mb-1';
+                    if (ing.sub_amount) li.dataset.subAmount = ing.sub_amount;
+                    if (ing.sub_unit) li.dataset.subUnit = ing.sub_unit;
                     const nameSpan = `<span class="text-info">${this.escapeHtml(ing.name)}</span>`;
                     let amountPart = '';
                     if (ing.amount && ing.unit) {
@@ -787,7 +789,11 @@ class RecipeExtractorTest {
                     } else if (ing.unit) {
                         amountPart = ` <span class="text-muted">${this.escapeHtml(ing.unit)}</span>`;
                     }
-                    li.innerHTML = nameSpan + amountPart;
+                    let subPart = '';
+                    if (ing.sub_amount && ing.sub_unit) {
+                        subPart = ` <span class="text-muted small">(${this.escapeHtml(ing.sub_amount)}${this.escapeHtml(ing.sub_unit)})</span>`;
+                    }
+                    li.innerHTML = nameSpan + amountPart + subPart;
                     this.ingredientsList.appendChild(li);
                 });
             } else {

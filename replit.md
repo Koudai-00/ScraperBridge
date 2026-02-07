@@ -28,7 +28,7 @@ Preferred communication style: Simple, everyday language.
 - **Caching**: Intelligent video URL-based caching prevents redundant AI processing.
 - **Cost Tracking**: Logs AI usage and costs per user.
 - **Recipe Refinement**: Uses Gemini to refine extracted recipes from descriptions/comments, removing promotional content and structuring output into JSON.
-- **Ingredient Structure**: Extracts ingredients with separate `name`, `amount`, and `unit` fields.
+- **Ingredient Structure**: Extracts ingredients with separate `name`, `amount`, `unit`, `sub_amount`, and `sub_unit` fields. The `sub_amount`/`sub_unit` pair holds weight conversion data (e.g., "ズッキーニ1本(200g)" → amount="1", unit="本", sub_amount="200", sub_unit="g").
 
 ### System Design Choices
 - **Error Handling**: Structured error responses with appropriate HTTP status codes and input validation.
