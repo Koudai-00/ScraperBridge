@@ -1638,3 +1638,80 @@ def get_available_models():
     except Exception as e:
         logging.error(f"Error getting available models: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/test/supabase-connection', methods=['GET'])
+def test_supabase_connection():
+    import requests as http_requests
+
+    supabase_url = os.getenv('SUPABASE_URL', '')
+    service_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '')
+
+    if not supabase_url:
+        return jsonify({
+            'success': False,
+            'error': 'SUPABASE_URL が設定されていません'
+        }), 500
+
+    if not service_key:
+        return jsonify({
+            'success': False,
+            'error': 'SUPABASE_SERVICE_ROLE_KEY が設定されていません'
+        }), 500
+
+    try:
+        url = f'{supabase_url}/rest/v1/categories?select=*&order=id.asc'
+        headers = {
+            'apikey': service_key,
+            'Authorization': f'Bearer {service_key}',
+            'Content-Type': 'application/json'
+        }
+
+        response = http_requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code == 200:
+            data = response.json()
+            return jsonify({
+                'success': True,
+                'message': 'Supabase接続成功',
+                'record_count': len(data),
+                'table': 'categories',
+                'data': data
+            }), 200
+        elif response.status_code == 401:
+            return jsonify({
+                'success': False,
+                'error': '認証エラー: APIキーが無効です',
+                'status_code': response.status_code
+            }), 401
+        elif response.status_code == 404:
+            return jsonify({
+                'success': False,
+                'error': 'テーブルが見つかりません',
+                'status_code': response.status_code
+            }), 404
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Supabaseからエラーレスポンス',
+                'status_code': response.status_code,
+                'details': response.text[:500]
+            }), response.status_code
+
+    except http_requests.exceptions.ConnectionError:
+        return jsonify({
+            'success': False,
+            'error': 'Supabaseに接続できません。URLを確認してください。'
+        }), 503
+    except http_requests.exceptions.Timeout:
+        return jsonify({
+            'success': False,
+            'error': '接続がタイムアウトしました'
+        }), 504
+    except Exception as e:
+        logging.error(f"Supabase connection test error: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'予期しないエラーが発生しました',
+            'details': str(e)
+        }), 500
