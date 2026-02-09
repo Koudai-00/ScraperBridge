@@ -1719,7 +1719,7 @@ def test_supabase_connection():
 
 
 @api_bp.route('/shopping-list/check-master', methods=['POST'])
-@require_api_key('app')
+
 def check_shopping_master():
     """
     買い物リストのマスターデータ照合
