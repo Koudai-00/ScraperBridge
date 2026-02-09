@@ -1,0 +1,32 @@
+
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - FLASK_ENV=development
+      # Override DATABASE_URL to use the local db container
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/scraperbridge_db
+    env_file:
+      - .env
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+    command: gunicorn --bind 0.0.0.0:8080 --workers 1 --threads 8 --reload main:app
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=scraperbridge_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

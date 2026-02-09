@@ -9,6 +9,7 @@ from metadata_extractor import MetadataExtractor
 from recipe_extractor import RecipeExtractor
 from folder_categorizer import FolderCategorizer
 from layout_analyzer import LayoutAnalyzer
+from shopping_manager import shopping_manager
 
 # Create blueprint for API routes
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -1715,3 +1716,53 @@ def test_supabase_connection():
             'error': f'予期しないエラーが発生しました',
             'details': str(e)
         }), 500
+
+
+@api_bp.route('/shopping-list/check-master', methods=['POST'])
+@require_api_key('app')
+def check_shopping_master():
+    """
+    買い物リストのマスターデータ照合
+    
+    Request body:
+    {
+        "ingredients": ["人参", "豚バラ肉", ...]
+    }
+    
+    Response:
+    {
+        "results": [
+            {
+                "ingredient_name": "人参",
+                "master_name": "人参",
+                "category_id": 1,
+                "category_name": "野菜・果物",
+                "is_new": false  # 既存代表名あり
+            },
+            {
+                "ingredient_name": "未知の食材",
+                "master_name": "未知の食材",
+                "category_id": 15,
+                "category_name": "日用品・その他",
+                "is_new": true   # 新規作成
+            }
+        ]
+    }
+    """
+    try:
+        data = request.get_json()
+        if not data or 'ingredients' not in data:
+            return jsonify({"error": "Missing 'ingredients' field"}), 400
+            
+        ingredients = data['ingredients']
+        if not isinstance(ingredients, list):
+            return jsonify({"error": "'ingredients' must be a list"}), 400
+            
+        # 買い物リストマネージャーで処理
+        results = shopping_manager.check_and_resolve_ingredients(ingredients)
+        
+        return jsonify({"results": results}), 200
+        
+    except Exception as e:
+        logging.error(f"Error in check_shopping_master: {e}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500

@@ -412,4 +412,161 @@ amountには数値のみ、unitには単位のみを入れてください。「�
         return result
 
 
+
+    def categorize_ingredient(self, ingredient_name: str, categories: List[Dict[str, Any]], 
+                              models: Optional[List[str]] = None) -> tuple:
+        """
+        食材名をカテゴリに分類する
+        
+        Args:
+            ingredient_name: 分類する食材名
+            categories: カテゴリ情報のリスト [{'id': 1, 'name': '野菜'}, ...]
+            models: 使用するモデルリスト
+            
+        Returns:
+            category_id
+        """
+        if models is None:
+            models = TEXT_MODELS
+
+        # カテゴリ一覧テキストを生成
+        categories_text = "\n".join([f"{c['id']}: {c['name']}" for c in categories])
+        
+        prompt = f"""# Role
+あなたは日本の食品流通およびスーパーマーケットの棚割りに精通した専門家です。
+
+# Task
+入力された「食材名」が、日本の一般的なスーパーマーケットの棚割りを基準とした場合、以下の「15の分類」のどれに該当するか判定し、そのカテゴリIDを回答してください。
+
+# Categories (Order and ID)
+{categories_text}
+
+# Guidelines
+- 日本の一般的なスーパーマーケットの「売り場」の感覚で分類してください。
+- 以下の判断に迷いやすい項目は、それぞれの基準を優先してください：
+  - 加工の度合い: 生肉は「3」、加熱済み惣菜は「6」、冷凍品は「8」を優先。
+  - 粉類・乾燥食品: 小麦粉、パスタ、わかめ等は「9」。
+  - 食材ではない単語（挨拶や文章など）: 一律で「15」。
+
+# Output Format (Strict JSON)
+{{
+  "category_id": 数値
+}}
+
+# Input
+食材名: {ingredient_name}"""
+
+        messages = [{"role": "user", "content": prompt}]
+        
+        try:
+            result = self.chat_completion(messages, models=models, temperature=0.1)
+            
+            if result['success']:
+                import json
+                try:
+                    content = result['content'].strip()
+                    # JSONブロックの抽出
+                    if "```json" in content:
+                        content = content.split("```json")[1].split("```")[0].strip()
+                    elif "```" in content:
+                        content = content.split("```")[1].split("```")[0].strip()
+                        
+                    data = json.loads(content)
+                    return data.get('category_id')
+                except Exception as e:
+                    logging.error(f"Failed to parse categorization response: {e}, content: {result['content']}")
+                    return None
+            else:
+                logging.error(f"Categorization failed: {result.get('error')}")
+                return None
+
+                
+        except Exception as e:
+            logging.error(f"Error in categorize_ingredient: {e}")
+            return None, str(e)
+
+    def generate_master_name(self, ingredient_name: str, category_id: int, 
+                             existing_masters: List[str], models: Optional[List[str]] = None) -> tuple:
+        """
+        新規食材名から代表名を生成・照合する
+        
+        Args:
+            ingredient_name: 新規食材名
+            category_id: カテゴリID
+            existing_masters: 既存の代表名リスト
+            models: 使用するモデルリスト
+            
+        Returns:
+            (master_name, is_new_master)
+        """
+        if models is None:
+            models = TEXT_MODELS
+            
+        # 既存リストをテキスト化
+        masters_text = "\n".join([f"- {m}" for m in existing_masters])
+        # リストが空の場合の表示
+        if not masters_text:
+            masters_text = "(なし)"
+
+        prompt = f"""# Role
+あなたは食品データベースの正規化を行うデータエンジニアです。
+
+# Task
+入力された「新規食材名」を、提供された「既存の代表名リスト」と照合してください。
+「部位・形態・加工状態」が一致するものがリストにあればその代表名を選択し、なければ新しい代表名を考案してください。
+
+# Rules (厳守)
+1. **合算の可否判定**:
+   以下の属性が一つでも異なる場合は、既存の代表名に含めず、必ず「新しい代表名」を作成してください。
+   - 部位（例: バラ、ロース、もも）
+   - 形状（例: ひき肉、薄切り、ブロック、切り落とし）
+   - 加工状態（例: 味付け済み、乾燥、冷凍）
+2. **名称の統一**:
+   「表記ゆれ（人参とにんじん、豚バラと豚ばら等）」は、既存のリストに適切なものがあればそれに合わせ、なければ一般的な漢字・カタカナ表記で作成してください。
+3. **新規作成時のルール**:
+   新規で代表名を作成する場合、品種名（イベリコ、黒毛和牛等）は除き、部位や形状がわかる名称にしてください。
+   例: 「イベリコ豚バラ」→ 代表名: 「豚バラ肉」
+
+# Input
+- 新規食材名: {ingredient_name}
+- 既存の代表名リスト (カテゴリID: {category_id} 内):
+{masters_text}
+
+# Output Format (Strict JSON)
+{{
+  "master_name": "決定した代表名",
+  "is_new_master": true/false
+}}"""
+
+        messages = [{"role": "user", "content": prompt}]
+        
+        try:
+            result = self.chat_completion(messages, models=models, temperature=0.1)
+            
+            if result['success']:
+                import json
+                try:
+                    content = result['content'].strip()
+                    # JSONブロックの抽出
+                    if "```json" in content:
+                        content = content.split("```json")[1].split("```")[0].strip()
+                    elif "```" in content:
+                        content = content.split("```")[1].split("```")[0].strip()
+                        
+                    data = json.loads(content)
+                    return data.get('master_name'), data.get('is_new_master')
+                except Exception as e:
+                    logging.error(f"Failed to parse master name generation response: {e}, content: {result['content']}")
+                    # フォールバック: パース失敗時は入力名をそのまま新規として返すなどの安全策も考えられるが、
+                    # ここではエラー詳細を返す
+                    return ingredient_name, True
+            else:
+                logging.error(f"Master name generation failed: {result.get('error')}")
+                return ingredient_name, True
+                
+        except Exception as e:
+            logging.error(f"Error in generate_master_name: {e}")
+            return ingredient_name, True
+
+
 openrouter_client = OpenRouterClient()
