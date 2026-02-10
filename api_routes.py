@@ -1813,7 +1813,11 @@ def service_status():
         <body>
             <div class="card">
                 <h1>AI Model Status Dashboard</h1>
-                <a href="/api/service-status" class="refresh-btn">Refresh Status</a>
+                <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+                    <a href="/api/service-status" class="refresh-btn">Refresh Status</a>
+                    <button id="runChecksBtn" class="refresh-btn" style="background-color: #28a745;">Run All Checks</button>
+                    <span id="checkStatus" style="display:none; color: #666;">Running checks... this may take 10-20 seconds...</span>
+                </div>
                 <div class="db-status">
                     Log Database: {db_status_text}
                 </div>
@@ -1859,6 +1863,32 @@ def service_status():
             <div style="text-align: center; color: #666; font-size: 0.8em;">
                 ScraperBridge API Service
             </div>
+            
+            <script>
+                document.getElementById('runChecksBtn').addEventListener('click', function() {
+                    const btn = this;
+                    const statusSpan = document.getElementById('checkStatus');
+                    
+                    if (confirm('全モデルの動作確認を実行しますか？（数秒〜20秒程度かかります）')) {
+                        btn.disabled = true;
+                        btn.style.opacity = "0.7";
+                        statusSpan.style.display = "inline";
+                        
+                        fetch('/api/check-models', { method: 'POST' })
+                            .then(response => response.json())
+                            .then(data => {
+                                alert('Check completed! Reloading page...');
+                                window.location.reload();
+                            })
+                            .catch(error => {
+                                alert('Error running checks: ' + error);
+                                btn.disabled = false;
+                                btn.style.opacity = "1";
+                                statusSpan.style.display = "none";
+                            });
+                    }
+                });
+            </script>
         </body>
         </html>
         """
@@ -1867,4 +1897,15 @@ def service_status():
         
     except Exception as e:
         logging.error(f"Error rendering status dashboard: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@api_bp.route('/check-models', methods=['POST'])
+def check_models_endpoint():
+    """全モデルの動作確認を実行（非同期ではないが並列処理）"""
+    try:
+        from openrouter_client import openrouter_client
+        results = openrouter_client.check_all_models() # 内部でcleanupも実行
+        return jsonify({"status": "completed", "results": results})
+    except Exception as e:
+        logging.error(f"Error checking models: {e}")
         return jsonify({"error": str(e)}), 500

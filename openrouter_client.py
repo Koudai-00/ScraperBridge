@@ -18,7 +18,8 @@ import base64
 import json
 import re
 import psycopg2
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone, timedelta
 import google.generativeai as genai
 from typing import Dict, Any, List, Optional
 
@@ -27,14 +28,13 @@ from typing import Dict, Any, List, Optional
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# 日本語対応モデル（説明欄・コメント欄からの抽出用）
-# 優先順位: 1→2→3、エラー時は次のモデルへフォールバック
+# 使用するモデルリスト（ユーザー指定）
 TEXT_MODELS = [
-    "google/gemini-2.0-flash-lite-preview-02-05:free", # 1位
-    "google/gemma-2-9b-it:free",                       # 2位
-    "meta-llama/llama-3.1-8b-instruct:free",           # 3位
-    "openai/gpt-oss-120b:free",                        # 4位 (New)
-    "openai/gpt-oss-20b:free",                         # 5位 (New)
+    "google/gemma-3-27b-it:free",
+    "google/gemma-3-12b-it:free",
+    "openai/gpt-oss-120b:free",
+    "openai/gpt-oss-20b:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
 ]
 
 
@@ -80,7 +80,7 @@ class OpenRouterClient:
                 "last_error": None
             }
         # Gemini直接利用のステータスも追加
-        self.model_stats["gemini-1.5-flash-lite (direct)"] = {
+        self.model_stats["gemini-1.5-flash (direct)"] = {
             "last_used": None,
             "status": "unused",
             "success_count": 0,
@@ -120,7 +120,9 @@ class OpenRouterClient:
             }
         
         stats = self.model_stats[model]
-        stats["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        # 日本時間 (UTC+9) を取得
+        JST = timezone(timedelta(hours=9))
+        stats["last_used"] = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
         
         status_str = "success" if success else "error"
         
@@ -151,7 +153,7 @@ class OpenRouterClient:
             
             # ベースとして現在のTEXT_MODELSを使用
             db_stats = {}
-            for m in TEXT_MODELS + ["gemini-1.5-flash-lite (direct)"]:
+            for m in TEXT_MODELS + ["gemini-1.5-flash (direct)"]:
                 db_stats[m] = {
                     "last_used": None,
                     "status": "unused",
@@ -185,10 +187,16 @@ class OpenRouterClient:
                 if model_name not in db_stats:
                      db_stats[model_name] = {}
                 
+                # DBのUTC時間をJSTに変換 (Neon/Postgresは通常UTCで保存されるため)
+                # ただし、保存時に特に変換していなければDB内はすでにJSTかもしれないが、
+                # _update_model_statusでnow(JST)を使っているため、DBにはJSTの時刻文字列が入っているはず。
+                # ここでは単純に文字列として取得する。
+                last_used_str = row[3].strftime("%Y-%m-%d %H:%M:%S") if row[3] else None
+                
                 db_stats[model_name] = {
                     "success_count": row[1],
                     "error_count": row[2],
-                    "last_used": row[3].strftime("%Y-%m-%d %H:%M:%S") if row[3] else None,
+                    "last_used": last_used_str,
                     "last_error": row[4],
                     "status": row[5] if row[5] else "unused"
                 }
@@ -200,6 +208,84 @@ class OpenRouterClient:
         except Exception as e:
             logging.error(f"Failed to fetch stats from DB: {e}")
             return self.model_stats
+
+    def check_all_models(self) -> Dict[str, Any]:
+        """全モデルの動作確認を一括実行"""
+        results = {}
+        
+        # 1年以上前のログを削除（メンテナンス作業）
+        self.cleanup_old_logs()
+
+        def check_single_model(model_name):
+            try:
+                # テスト用メッセージ
+                messages = [{"role": "user", "content": "Hello"}]
+                # 最大トークンを小さくして高速化
+                if "direct" in model_name:
+                    # Gemini Direct
+                    if self._ensure_gemini_initialized():
+                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        response = model.generate_content("Hello")
+                        if response and response.text:
+                            self._update_model_status(model_name, True, tokens=0)
+                            return True
+                        else:
+                            raise Exception("No response text")
+                    else:
+                        raise Exception("Gemini API key not set")
+                else:
+                    # OpenRouter
+                    response = self._call_api(model_name, messages, max_tokens=10)
+                    if response.status_code == 200:
+                        self._update_model_status(model_name, True, tokens=0)
+                        return True
+                    else:
+                        error_msg = f"HTTP {response.status_code}"
+                        try:
+                            error_msg += f": {response.json().get('error', {}).get('message', '')}"
+                        except:
+                            pass
+                        raise Exception(error_msg)
+            except Exception as e:
+                self._update_model_status(model_name, False, str(e))
+                return False
+
+        # 並列実行
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_model = {
+                executor.submit(check_single_model, m): m 
+                for m in TEXT_MODELS + ["gemini-1.5-flash (direct)"]
+            }
+            for future in as_completed(future_to_model):
+                model = future_to_model[future]
+                try:
+                    success = future.result()
+                    results[model] = "OK" if success else "Error"
+                except Exception as e:
+                    results[model] = f"Error: {e}"
+        
+        return results
+
+    def cleanup_old_logs(self):
+        """1年以上前のログを削除"""
+        if not self.log_db_url:
+            return
+            
+        try:
+            conn = psycopg2.connect(self.log_db_url)
+            cur = conn.cursor()
+            # 1年以上前のデータを削除
+            query = "DELETE FROM ai_usage_logs WHERE timestamp < NOW() - INTERVAL '1 year'"
+            cur.execute(query)
+            deleted_count = cur.rowcount
+            conn.commit()
+            cur.close()
+            conn.close()
+            if deleted_count > 0:
+                logging.info(f"Cleaned up {deleted_count} old log entries.")
+        except Exception as e:
+            logging.error(f"Failed to cleanup old logs: {e}")
+
 
 
     def _ensure_gemini_initialized(self):
@@ -305,21 +391,21 @@ class OpenRouterClient:
         if self._ensure_gemini_initialized():
             logging.info("All OpenRouter models failed. Falling back to Gemini API directly.")
             try:
-                model = genai.GenerativeModel("gemini-1.5-flash-lite") # または安定版の2.0-flash-lite
+                model = genai.GenerativeModel("gemini-1.5-flash") # 正しいモデルID
                 # メッセージ形式をGemini向けに変換
                 prompt = "\n".join([m['content'] for m in messages if m['role'] == 'user'])
                 response = model.generate_content(prompt)
                 
                 if response and response.text:
-                    self._update_model_status("gemini-1.5-flash-lite (direct)", True, tokens=0)
+                    self._update_model_status("gemini-1.5-flash (direct)", True, tokens=0)
                     return {
                         "success": True,
                         "content": response.text,
-                        "model_used": "gemini-1.5-flash-lite (direct)",
+                        "model_used": "gemini-1.5-flash (direct)",
                         "tokens_used": 0, # 直接APIの場合は簡易化
                     }
             except Exception as e:
-                self._update_model_status("gemini-1.5-flash-lite (direct)", False, str(e))
+                self._update_model_status("gemini-1.5-flash (direct)", False, str(e))
                 logging.error(f"Direct Gemini API fallback also failed: {e}")
                 last_error = f"{last_error} | Gemini fallback error: {str(e)}"
         
