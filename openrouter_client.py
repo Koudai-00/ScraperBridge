@@ -15,18 +15,29 @@ import logging
 import requests
 import time
 import base64
+import json
+import re
+import psycopg2
+from datetime import datetime
+import google.generativeai as genai
 from typing import Dict, Any, List, Optional
+
+
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # 日本語対応モデル（説明欄・コメント欄からの抽出用）
 # 優先順位: 1→2→3、エラー時は次のモデルへフォールバック
-# 4番目はGemini APIを直接使用（gemini-2.0-flash-lite）
 TEXT_MODELS = [
-    "google/gemma-3-27b-it:free",           # 1位
-    "google/gemma-3-12b-it:free",           # 2位
+    "google/gemini-2.0-flash-lite-preview-02-05:free", # 1位
+    "google/gemma-2-9b-it:free",                       # 2位
+    "meta-llama/llama-3.1-8b-instruct:free",           # 3位
+    "openai/gpt-oss-120b:free",                        # 4位 (New)
+    "openai/gpt-oss-20b:free",                         # 5位 (New)
 ]
+
+
 
 # 動画解析はGemini API直接使用のため、OpenRouterでは使用しない
 VIDEO_CAPABLE_MODELS = []
@@ -47,6 +58,8 @@ class OpenRouterClient:
     
     def __init__(self):
         self.api_key = OPENROUTER_API_KEY
+        self.gemini_key = os.getenv("GEMINI_API_KEY")
+        self.log_db_url = os.getenv("LOG_DATABASE_URL")
         self.base_url = OPENROUTER_API_URL
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -54,6 +67,149 @@ class OpenRouterClient:
             "HTTP-Referer": "https://replit.com",
             "X-Title": "Recipe Extractor"
         }
+        self._gemini_initialized = False
+        
+        # モデルごとのステータス管理
+        self.model_stats = {}
+        for m in TEXT_MODELS:
+            self.model_stats[m] = {
+                "last_used": None,
+                "status": "unused",  # unused, success, error
+                "success_count": 0,
+                "error_count": 0,
+                "last_error": None
+            }
+        # Gemini直接利用のステータスも追加
+        self.model_stats["gemini-1.5-flash-lite (direct)"] = {
+            "last_used": None,
+            "status": "unused",
+            "success_count": 0,
+            "error_count": 0,
+            "last_error": None
+        }
+
+    def _log_to_db(self, model: str, status: str, error_message: str = None, tokens: int = 0):
+        """データベースへログを保存"""
+        if not self.log_db_url:
+            return
+
+        try:
+            conn = psycopg2.connect(self.log_db_url)
+            cur = conn.cursor()
+            query = """
+                INSERT INTO ai_usage_logs (model_name, status, error_message, tokens_used)
+                VALUES (%s, %s, %s, %s)
+            """
+            cur.execute(query, (model, status, error_message, tokens))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            logging.error(f"Failed to write log to DB: {e}")
+
+    def _update_model_status(self, model: str, success: bool, error_msg: str = None, tokens: int = 0):
+        """モデルの使用状況を更新（メモリ＆DB）"""
+        # メモリ上のステータス更新（既存ロジック）
+        if model not in self.model_stats:
+            self.model_stats[model] = {
+                "last_used": None,
+                "status": "unused",
+                "success_count": 0,
+                "error_count": 0,
+                "last_error": None
+            }
+        
+        stats = self.model_stats[model]
+        stats["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        
+        status_str = "success" if success else "error"
+        
+        if success:
+            stats["status"] = "success"
+            stats["success_count"] += 1
+            stats["last_error"] = None
+        else:
+            stats["status"] = "error"
+            stats["error_count"] += 1
+            stats["last_error"] = error_msg
+
+        # DBへログ保存
+        self._log_to_db(model, status_str, error_msg, tokens)
+
+    def get_model_status(self) -> Dict[str, Any]:
+        """全モデルのステータスを取得（DBがあればDBから集計、なければメモリ）"""
+        if not self.log_db_url:
+            return self.model_stats
+
+        try:
+            conn = psycopg2.connect(self.log_db_url)
+            cur = conn.cursor()
+            
+            # 各モデルの最新状態と集計を取得
+            # 注意: ここでは簡易的にメモリ上のstats構造に合わせてデータを構築する
+            # 本来はGROUP BYで集計するが、現在のself.model_statsの構造を維持して返す
+            
+            # ベースとして現在のTEXT_MODELSを使用
+            db_stats = {}
+            for m in TEXT_MODELS + ["gemini-1.5-flash-lite (direct)"]:
+                db_stats[m] = {
+                    "last_used": None,
+                    "status": "unused",
+                    "success_count": 0,
+                    "error_count": 0,
+                    "last_error": None
+                }
+            
+            # 集計クエリ: モデルごとの成功数、失敗数、最終使用日時、最終エラー
+            query = """
+                SELECT 
+                    model_name,
+                    COUNT(*) FILTER (WHERE status = 'success') as success_count,
+                    COUNT(*) FILTER (WHERE status = 'error') as error_count,
+                    MAX(timestamp) as last_used,
+                    (SELECT error_message FROM ai_usage_logs l2 
+                     WHERE l2.model_name = l1.model_name AND status = 'error' 
+                     ORDER BY timestamp DESC LIMIT 1) as last_error,
+                    (SELECT status FROM ai_usage_logs l3 
+                     WHERE l3.model_name = l1.model_name 
+                     ORDER BY timestamp DESC LIMIT 1) as current_status
+                FROM ai_usage_logs l1
+                GROUP BY model_name
+            """
+            cur.execute(query)
+            rows = cur.fetchall()
+            
+            for row in rows:
+                model_name = row[0]
+                # statsにないモデル（過去のモデルなど）も含まれる可能性があるためチェック
+                if model_name not in db_stats:
+                     db_stats[model_name] = {}
+                
+                db_stats[model_name] = {
+                    "success_count": row[1],
+                    "error_count": row[2],
+                    "last_used": row[3].strftime("%Y-%m-%d %H:%M:%S") if row[3] else None,
+                    "last_error": row[4],
+                    "status": row[5] if row[5] else "unused"
+                }
+
+            cur.close()
+            conn.close()
+            return db_stats
+            
+        except Exception as e:
+            logging.error(f"Failed to fetch stats from DB: {e}")
+            return self.model_stats
+
+
+    def _ensure_gemini_initialized(self):
+
+        """Gemini APIを初期化"""
+        if not self._gemini_initialized and self.gemini_key:
+            genai.configure(api_key=self.gemini_key)
+            self._gemini_initialized = True
+        return self._gemini_initialized
+
     
     def _call_api(self, model: str, messages: List[Dict[str, str]], 
                   max_tokens: int = 4096, temperature: float = 0.7) -> Dict[str, Any]:
@@ -117,6 +273,7 @@ class OpenRouterClient:
                         "completion_tokens": usage.get("completion_tokens", 0),
                     }
                 elif response.status_code == 429:
+                    self._update_model_status(model, False, f"Rate limit (429)")
                     logging.warning(f"Rate limited on {model}, trying next model...")
                     last_error = f"Rate limit exceeded for {model}"
                     time.sleep(0.5)
@@ -125,26 +282,46 @@ class OpenRouterClient:
                     try:
                         error_data = response.json()
                         error_msg = error_data.get("error", {}).get("message", response.text)
-                        error_code = error_data.get("error", {}).get("code", "unknown")
-                        error_metadata = error_data.get("error", {}).get("metadata", {})
-                        logging.warning(f"Error from {model} (HTTP {response.status_code}, code={error_code}): {error_msg}")
-                        if error_metadata:
-                            logging.warning(f"Error metadata from {model}: {error_metadata}")
-                        logging.debug(f"Full error response from {model}: {error_data}")
+                        logging.warning(f"Error from {model} (HTTP {response.status_code}): {error_msg}")
                     except Exception:
                         error_msg = response.text
                         logging.warning(f"Error from {model} (HTTP {response.status_code}): {error_msg}")
                     last_error = error_msg
+                    self._update_model_status(model, False, f"HTTP {response.status_code}: {error_msg}")
                     continue
                     
             except requests.exceptions.Timeout:
+                self._update_model_status(model, False, "Timeout")
                 logging.warning(f"Timeout on {model}, trying next model...")
                 last_error = f"Timeout for {model}"
                 continue
             except Exception as e:
+                self._update_model_status(model, False, str(e))
                 logging.warning(f"Exception with {model}: {e}")
                 last_error = str(e)
                 continue
+        
+        # OpenRouterが全滅した場合、Gemini APIを直接試行
+        if self._ensure_gemini_initialized():
+            logging.info("All OpenRouter models failed. Falling back to Gemini API directly.")
+            try:
+                model = genai.GenerativeModel("gemini-1.5-flash-lite") # または安定版の2.0-flash-lite
+                # メッセージ形式をGemini向けに変換
+                prompt = "\n".join([m['content'] for m in messages if m['role'] == 'user'])
+                response = model.generate_content(prompt)
+                
+                if response and response.text:
+                    self._update_model_status("gemini-1.5-flash-lite (direct)", True, tokens=0)
+                    return {
+                        "success": True,
+                        "content": response.text,
+                        "model_used": "gemini-1.5-flash-lite (direct)",
+                        "tokens_used": 0, # 直接APIの場合は簡易化
+                    }
+            except Exception as e:
+                self._update_model_status("gemini-1.5-flash-lite (direct)", False, str(e))
+                logging.error(f"Direct Gemini API fallback also failed: {e}")
+                last_error = f"{last_error} | Gemini fallback error: {str(e)}"
         
         return {
             "success": False,
@@ -153,6 +330,7 @@ class OpenRouterClient:
             "error": last_error or "All models failed",
             "tokens_used": 0,
         }
+
     
     def chat_completion_with_vision(self, messages: List[Dict[str, Any]],
                                      models: Optional[List[str]] = None,
@@ -462,17 +640,21 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             result = self.chat_completion(messages, models=models, temperature=0.1)
             
             if result['success']:
-                import json
                 try:
                     content = result['content'].strip()
-                    # JSONブロックの抽出
-                    if "```json" in content:
-                        content = content.split("```json")[1].split("```")[0].strip()
-                    elif "```" in content:
-                        content = content.split("```")[1].split("```")[0].strip()
+                    # JSONブロックまたは最外の{ }を抽出
+                    json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                    if json_match:
+                        content = json_match.group(0)
                         
                     data = json.loads(content)
-                    return data.get('category_id')
+                    val = data.get('category_id')
+                    if val is not None:
+                        try:
+                            return int(val)
+                        except (ValueError, TypeError):
+                            return val
+                    return None
                 except Exception as e:
                     logging.error(f"Failed to parse categorization response: {e}, content: {result['content']}")
                     return None
@@ -544,21 +726,21 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             result = self.chat_completion(messages, models=models, temperature=0.1)
             
             if result['success']:
-                import json
                 try:
                     content = result['content'].strip()
-                    # JSONブロックの抽出
-                    if "```json" in content:
-                        content = content.split("```json")[1].split("```")[0].strip()
-                    elif "```" in content:
-                        content = content.split("```")[1].split("```")[0].strip()
+                    # JSONブロックまたは最外の{ }を抽出
+                    json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                    if json_match:
+                        content = json_match.group(0)
                         
                     data = json.loads(content)
-                    return data.get('master_name'), data.get('is_new_master')
+                    is_new = data.get('is_new_master')
+                    # booleanへの変換
+                    if isinstance(is_new, str):
+                        is_new = is_new.lower() == 'true'
+                    return data.get('master_name'), bool(is_new)
                 except Exception as e:
                     logging.error(f"Failed to parse master name generation response: {e}, content: {result['content']}")
-                    # フォールバック: パース失敗時は入力名をそのまま新規として返すなどの安全策も考えられるが、
-                    # ここではエラー詳細を返す
                     return ingredient_name, True
             else:
                 logging.error(f"Master name generation failed: {result.get('error')}")

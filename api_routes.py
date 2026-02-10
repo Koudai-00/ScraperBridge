@@ -1766,3 +1766,105 @@ def check_shopping_master():
     except Exception as e:
         logging.error(f"Error in check_shopping_master: {e}")
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+@api_bp.route('/service-status', methods=['GET'])
+def service_status():
+    """
+    OpenRouterモデルの使用状況を表示するダッシュボード (HTML)
+    """
+    try:
+        from openrouter_client import openrouter_client
+        stats = openrouter_client.get_model_status()
+        
+        # DB接続状態の確認
+        db_status_text = '<span style="color:red">Not Configured</span>'
+        if openrouter_client.log_db_url:
+            db_status_text = '<span style="color:green">Connected (Neon)</span>'
+        
+        # シンプルなHTML生成
+        html_content = f"""
+        <!DOCTYPE html>
+        <html lang="ja">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>AI Model Status Dashboard</title>
+            <style>
+                body {{ font-family: sans-serif; padding: 20px; background-color: #f5f5f5; }}
+                h1 {{ color: #333; }}
+                .card {{ background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }}
+                table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+                th, td {{ text-align: left; padding: 12px; border-bottom: 1px solid #ddd; }}
+                th {{ background-color: #f8f9fa; font-weight: bold; }}
+                .status-success {{ color: green; font-weight: bold; }}
+                .status-error {{ color: red; font-weight: bold; }}
+                .status-unused {{ color: gray; }}
+                .refresh-btn {{ 
+                    padding: 10px 20px; background-color: #007bff; color: white; 
+                    border: none; border-radius: 4px; cursor: pointer; text-decoration: none; 
+                    display: inline-block; margin-bottom: 10px;
+                }}
+                .refresh-btn:hover {{ background-color: #0056b3; }}
+                .last-error {{ font-size: 0.85em; color: #d9534f; max-width: 300px; overflow-wrap: break-word; }}
+                .db-status {{ margin-bottom: 15px; font-weight: bold; color: #555; }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>AI Model Status Dashboard</h1>
+                <a href="/api/service-status" class="refresh-btn">Refresh Status</a>
+                <div class="db-status">
+                    Log Database: {db_status_text}
+                </div>
+                <p>現在のOpenRouterおよびGemini APIモデルの使用状況（再起動でリセットされます）</p>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Model Name</th>
+                            <th>Status</th>
+                            <th>Last Used</th>
+                            <th>Success / Error</th>
+                            <th>Last Error Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """
+
+        
+        # 統計データを行として追加
+        for model, data in stats.items():
+            status_class = f"status-{data['status']}"
+            last_error = data['last_error'] if data['last_error'] else "-"
+            
+            row = f"""
+                        <tr>
+                            <td>{model}</td>
+                            <td class="{status_class}">{data['status'].upper()}</td>
+                            <td>{data['last_used'] or '-'}</td>
+                            <td>
+                                <span style="color:green">✓ {data['success_count']}</span> / 
+                                <span style="color:red">✗ {data['error_count']}</span>
+                            </td>
+                            <td class="last-error">{last_error}</td>
+                        </tr>
+            """
+            html_content += row
+            
+        html_content += """
+                    </tbody>
+                </table>
+            </div>
+            <div style="text-align: center; color: #666; font-size: 0.8em;">
+                ScraperBridge API Service
+            </div>
+        </body>
+        </html>
+        """
+        
+        return html_content, 200, {'Content-Type': 'text/html; charset=utf-8'}
+        
+    except Exception as e:
+        logging.error(f"Error rendering status dashboard: {e}")
+        return jsonify({"error": str(e)}), 500
