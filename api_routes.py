@@ -1778,9 +1778,9 @@ def service_status():
         stats = openrouter_client.get_model_status()
         
         # DB接続状態の確認
-        db_status_text = '<span style="color:red">Not Configured</span>'
+        db_status_text = '<span style="color:red">未設定</span>'
         if openrouter_client.log_db_url:
-            db_status_text = '<span style="color:green">Connected (Neon)</span>'
+            db_status_text = '<span style="color:green">接続済み (Neon)</span>'
         
         # シンプルなHTML生成
         html_content = f"""
@@ -1789,7 +1789,7 @@ def service_status():
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>AI Model Status Dashboard</title>
+            <title>AIモデル稼働状況</title>
             <style>
                 body {{ font-family: sans-serif; padding: 20px; background-color: #f5f5f5; }}
                 h1 {{ color: #333; }}
@@ -1812,25 +1812,25 @@ def service_status():
         </head>
         <body>
             <div class="card">
-                <h1>AI Model Status Dashboard</h1>
+                <h1>AIモデル稼働状況</h1>
                 <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
-                    <a href="/api/service-status" class="refresh-btn">Refresh Status</a>
-                    <button id="runChecksBtn" class="refresh-btn" style="background-color: #28a745;">Run All Checks</button>
-                    <span id="checkStatus" style="display:none; color: #666;">Running checks... this may take 10-20 seconds...</span>
+                    <a href="/api/service-status" class="refresh-btn">ステータス更新</a>
+                    <button id="runChecksBtn" class="refresh-btn" style="background-color: #28a745;">全モデル動作確認</button>
+                    <span id="checkStatus" style="display:none; color: #666;">動作確認を実行中... (10〜20秒かかります)</span>
                 </div>
                 <div class="db-status">
-                    Log Database: {db_status_text}
+                    ログデータベース: {db_status_text}
                 </div>
                 <p>現在のOpenRouterおよびGemini APIモデルの使用状況（再起動でリセットされます）</p>
                 
                 <table>
                     <thead>
                         <tr>
-                            <th>Model Name</th>
-                            <th>Status</th>
-                            <th>Last Used</th>
-                            <th>Success / Error</th>
-                            <th>Last Error Message</th>
+                            <th>モデル名</th>
+                            <th>状態</th>
+                            <th>最終使用日時</th>
+                            <th>成功 / 失敗</th>
+                            <th>最終エラーメッセージ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1877,11 +1877,11 @@ def service_status():
                         fetch('/api/check-models', { method: 'POST' })
                             .then(response => response.json())
                             .then(data => {
-                                alert('Check completed! Reloading page...');
+                                alert('確認完了！ページをリロードします。');
                                 window.location.reload();
                             })
                             .catch(error => {
-                                alert('Error running checks: ' + error);
+                                alert('エラーが発生しました: ' + error);
                                 btn.disabled = false;
                                 btn.style.opacity = "1";
                                 statusSpan.style.display = "none";

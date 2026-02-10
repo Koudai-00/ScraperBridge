@@ -130,8 +130,8 @@ class RecipeExtractor:
         else:
             extraction_flow.append("レシピなし")
 
-        # 動画解析はGemini API直接使用（gemini-2.0-flash-lite）- YouTube URLを直接渡す方式
-        video_model = 'gemini-2.0-flash-lite'
+        # 動画解析はGemini API直接使用（gemini-2.5-flash-lite）- YouTube URLを直接渡す方式
+        video_model = 'gemini-2.5-flash-lite'
         logging.info(f"Extracting recipe from YouTube video using URL-based Gemini API ({video_model})...")
         extraction_flow.append("動画解析")
         result = self._extract_recipe_from_youtube_url(video_url, video_model)
@@ -173,7 +173,7 @@ class RecipeExtractor:
             if match: return match.group(1)
         return ""
 
-    def _extract_recipe_from_youtube_url(self, video_url: str, model_name: str = 'gemini-2.0-flash-lite') -> Dict[str, Any]:
+    def _extract_recipe_from_youtube_url(self, video_url: str, model_name: str = 'gemini-2.5-flash-lite') -> Dict[str, Any]:
         """
         YouTube動画からレシピを抽出（URL直接方式）
         
@@ -290,7 +290,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             if match: return match.group(1)
         return ""
 
-    def _get_recipe_from_description(self, video_id: str, model_name: str = 'gemini-1.5-flash') -> Optional[Dict[str, Any]]:
+    def _get_recipe_from_description(self, video_id: str, model_name: str = 'gemini-2.5-flash-lite') -> Optional[Dict[str, Any]]:
         """YouTube説明欄からレシピを取得
 
         Args:
@@ -337,7 +337,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             logging.error(f"Error fetching YouTube description: {e}")
             return None
 
-    def _get_recipe_from_comments(self, video_id: str, model_name: str = 'gemini-1.5-flash') -> Optional[Dict[str, Any]]:
+    def _get_recipe_from_comments(self, video_id: str, model_name: str = 'gemini-2.5-flash-lite') -> Optional[Dict[str, Any]]:
         """YouTube投稿者コメントからレシピを取得
 
         Args:
@@ -500,7 +500,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
         non_empty_steps = [s for s in steps if isinstance(s, str) and s.strip()]
         return len(non_empty_steps) > 0
 
-    def _refine_recipe_with_gemini(self, raw_recipe_text: str, model_name: str = 'gemini-1.5-flash') -> Dict[str, Any]:
+    def _refine_recipe_with_gemini(self, raw_recipe_text: str, model_name: str = 'gemini-2.5-flash-lite') -> Dict[str, Any]:
         """
         Geminiを使って説明欄/コメントから抽出したレシピを整形する
 

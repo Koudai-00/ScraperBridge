@@ -5,9 +5,9 @@ Provides access to Japanese-capable AI models with automatic fallback on errors.
 Model Priority Order (3 models only):
 1. google/gemma-3-27b-it:free (OpenRouter)
 2. google/gemma-3-12b-it:free (OpenRouter)
-3. gemini-2.0-flash-lite (via Gemini API, fallback)
+3. gemini-2.5-flash-lite (via Gemini API, fallback)
 
-Note: Video analysis uses Gemini API directly (gemini-2.0-flash-lite), not OpenRouter.
+Note: Video analysis uses Gemini API directly (gemini-2.5-flash-lite), not OpenRouter.
 """
 
 import os
@@ -48,7 +48,7 @@ ALL_MODELS_INFO = {
         {"id": m, "name": m.split("/")[1].replace(":free", ""), "category": "日本語対応"} 
         for m in TEXT_MODELS
     ] + [
-        {"id": "gemini-2.0-flash-lite", "name": "gemini-2.0-flash-lite", "category": "日本語対応（Gemini API）"}
+        {"id": "gemini-2.5-flash-lite", "name": "gemini-2.5-flash-lite", "category": "日本語対応（Gemini API）"}
     ],
 }
 
@@ -80,7 +80,7 @@ class OpenRouterClient:
                 "last_error": None
             }
         # Gemini直接利用のステータスも追加
-        self.model_stats["gemini-1.5-flash (direct)"] = {
+        self.model_stats["gemini-2.5-flash-lite (direct)"] = {
             "last_used": None,
             "status": "unused",
             "success_count": 0,
@@ -153,7 +153,7 @@ class OpenRouterClient:
             
             # ベースとして現在のTEXT_MODELSを使用
             db_stats = {}
-            for m in TEXT_MODELS + ["gemini-1.5-flash (direct)"]:
+            for m in TEXT_MODELS + ["gemini-2.5-flash-lite (direct)"]:
                 db_stats[m] = {
                     "last_used": None,
                     "status": "unused",
@@ -224,7 +224,7 @@ class OpenRouterClient:
                 if "direct" in model_name:
                     # Gemini Direct
                     if self._ensure_gemini_initialized():
-                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        model = genai.GenerativeModel("gemini-2.5-flash-lite")
                         response = model.generate_content("Hello")
                         if response and response.text:
                             self._update_model_status(model_name, True, tokens=0)
@@ -254,7 +254,7 @@ class OpenRouterClient:
         with ThreadPoolExecutor(max_workers=5) as executor:
             future_to_model = {
                 executor.submit(check_single_model, m): m 
-                for m in TEXT_MODELS + ["gemini-1.5-flash (direct)"]
+                for m in TEXT_MODELS + ["gemini-2.5-flash-lite (direct)"]
             }
             for future in as_completed(future_to_model):
                 model = future_to_model[future]
@@ -391,21 +391,21 @@ class OpenRouterClient:
         if self._ensure_gemini_initialized():
             logging.info("All OpenRouter models failed. Falling back to Gemini API directly.")
             try:
-                model = genai.GenerativeModel("gemini-1.5-flash") # 正しいモデルID
+                model = genai.GenerativeModel("gemini-2.5-flash-lite") # 正しいモデルID
                 # メッセージ形式をGemini向けに変換
                 prompt = "\n".join([m['content'] for m in messages if m['role'] == 'user'])
                 response = model.generate_content(prompt)
                 
                 if response and response.text:
-                    self._update_model_status("gemini-1.5-flash (direct)", True, tokens=0)
+                    self._update_model_status("gemini-2.5-flash-lite (direct)", True, tokens=0)
                     return {
                         "success": True,
                         "content": response.text,
-                        "model_used": "gemini-1.5-flash (direct)",
+                        "model_used": "gemini-2.5-flash-lite (direct)",
                         "tokens_used": 0, # 直接APIの場合は簡易化
                     }
             except Exception as e:
-                self._update_model_status("gemini-1.5-flash (direct)", False, str(e))
+                self._update_model_status("gemini-2.5-flash-lite (direct)", False, str(e))
                 logging.error(f"Direct Gemini API fallback also failed: {e}")
                 last_error = f"{last_error} | Gemini fallback error: {str(e)}"
         
