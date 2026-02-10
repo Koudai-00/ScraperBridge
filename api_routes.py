@@ -1830,17 +1830,32 @@ def service_status():
                             <th>状態</th>
                             <th>最終使用日時</th>
                             <th>成功 / 失敗</th>
-                            <th>最終エラーメッセージ</th>
+                            <th>現在のエラー</th>
                         </tr>
                     </thead>
                     <tbody>
         """
 
         
+        
+        # 統計データを最終使用日時順（降順）にソート
+        # last_usedがNoneの場合は空文字列として扱い、末尾にする
+        sorted_stats = sorted(
+            stats.items(), 
+            key=lambda x: x[1]['last_used'] or "", 
+            reverse=True
+        )
+
         # 統計データを行として追加
-        for model, data in stats.items():
+        for model, data in sorted_stats:
             status_class = f"status-{data['status']}"
-            last_error = data['last_error'] if data['last_error'] else "-"
+            
+            # ステータスがsuccessの場合はエラーメッセージを表示しない
+            last_error = "-"
+            if data['status'] == 'error':
+                last_error = data['last_error'] if data['last_error'] else "Unknown Error"
+            elif data['status'] == 'unused':
+                last_error = "-"
             
             row = f"""
                         <tr>
