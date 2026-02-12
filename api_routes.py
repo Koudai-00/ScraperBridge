@@ -993,13 +993,18 @@ def get_metrics():
 @require_api_key('app')
 def suggest_folder():
     """
-    動画のタイトルと説明文から最適なフォルダを提案する
+    動画（複数可）のタイトルと説明文から最適なフォルダを提案する
     
     Request body:
     {
         "user_id": "user_12345...",
-        "video_title": "肉じゃがの作り方",
-        "video_description": "...",
+        "videos": [
+            {
+                "id": "v_123",
+                "title": "肉じゃがの作り方"
+            },
+            ...
+        ],
         "current_folders": [
             { "id": "f_001", "name": "和食" },
             ...
@@ -1009,54 +1014,54 @@ def suggest_folder():
     Response:
     {
         "success": true,
-        "suggested_folder_id": "f_001",
-        "reason": "..."
+        "results": [
+            {
+                "video_id": "v_123",
+                "suggested_folder_id": "f_001",
+                "reason": "..."
+            },
+            ...
+        ]
     }
     """
     try:
         data = request.get_json()
         
         if not data:
-            return jsonify({'error': 'Request body is required'}), 400
+            return jsonify({'success': False, 'error': 'Request body is required'}), 400
             
         # 必須パラメータのチェック
-        required_fields = ['user_id', 'video_title', 'current_folders']
+        required_fields = ['user_id', 'videos', 'current_folders']
         for field in required_fields:
             if field not in data:
-                return jsonify({'error': f'Missing {field} field'}), 400
+                return jsonify({'success': False, 'error': f'Missing {field} field'}), 400
         
         user_id = data['user_id']
-        video_title = data['video_title']
-        # 説明文は任意（なければ空文字）
-        video_description = data.get('video_description', '')
+        videos = data['videos']
         current_folders = data['current_folders']
         
-        if not isinstance(current_folders, list):
-            return jsonify({'error': 'current_folders must be a list'}), 400
+        if not isinstance(videos, list):
+            return jsonify({'success': False, 'error': 'videos must be a list'}), 400
             
-        logging.info(f"Folder suggestion request - User: {user_id}, Title: {video_title}")
+        if not isinstance(current_folders, list):
+            return jsonify({'success': False, 'error': 'current_folders must be a list'}), 400
+            
+        logging.info(f"Folder suggestion request - User: {user_id}, Video Count: {len(videos)}")
         
-        # フォルダ提案の実行
-        result = folder_categorizer.suggest_folder(
-            video_title=video_title,
-            video_description=video_description,
+        # フォルダ提案の実行（バッチ処理）
+        result = folder_categorizer.suggest_folders_batch(
+            videos=videos,
             current_folders=current_folders
         )
         
-        if result.get('success'):
-            return jsonify(result), 200
-        else:
-            # 失敗しても200で返し、success: falseとする（クライアント側のハンドリングのため）
-            # ただしシステムエラーの場合は500にするなど調整可能だが、
-            # 今回は要件定義にあるレスポンス形式に従い、successフラグで制御
-            return jsonify(result), 200
+        return jsonify(result), 200
             
     except Exception as e:
         logging.error(f"Error in suggest_folder endpoint: {e}")
         return jsonify({
             'success': False,
-            'suggested_folder_id': None,
-            'reason': f"Internal server error: {str(e)}"
+            'results': [],
+            'error': f"Internal server error: {str(e)}"
         }), 500
 
 
