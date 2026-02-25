@@ -10,6 +10,7 @@ from recipe_extractor import RecipeExtractor
 from folder_categorizer import FolderCategorizer
 from layout_analyzer import LayoutAnalyzer
 from shopping_manager import shopping_manager
+from tiktok_collection_extractor import TikTokCollectionExtractor
 
 # Create blueprint for API routes
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -191,6 +192,9 @@ folder_categorizer = FolderCategorizer()
 
 # Initialize layout analyzer
 layout_analyzer = LayoutAnalyzer()
+
+# Initialize TikTok collection extractor
+tiktok_collection_extractor = TikTokCollectionExtractor()
 
 # Get API keys from environment
 APP_API_KEY = os.getenv('APP_API_KEY')
@@ -1929,3 +1933,28 @@ def check_models_endpoint():
     except Exception as e:
         logging.error(f"Error checking models: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/extract-tiktok-collection', methods=['POST'])
+def extract_tiktok_collection():
+    """
+    TikTok共有コレクションから動画URLリストを抽出する
+    """
+    try:
+        data = request.get_json()
+        if not data or 'url' not in data:
+            return jsonify({"success": False, "error": "Missing 'url' field in request body"}), 400
+
+        collection_url = data['url']
+        logging.info(f"Processing TikTok collection: {collection_url}")
+
+        result = tiktok_collection_extractor.extract_collection(collection_url)
+        return jsonify(result), 200
+
+    except ValueError as e:
+        logging.error(f"ValueError in TikTok collection extraction: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+    except Exception as e:
+        logging.error(f"Unexpected error in TikTok collection extraction: {str(e)}")
+        return jsonify({"success": False, "error": f"Internal server error: {str(e)}"}), 500
