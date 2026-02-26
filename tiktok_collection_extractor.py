@@ -7,10 +7,11 @@ logger = logging.getLogger(__name__)
 
 class TikTokCollectionExtractor:
     def __init__(self):
-        # Increased timeouts for loading and scrolling heavy collections
-        self.navigation_timeout = 30000  # 30 seconds
-        self.scroll_timeout = 60000      # 60 seconds total for scrolling
-        
+        # Timeouts adjusted for robustness and Cloud Run limits
+        self.navigation_timeout = 20000  # 20 seconds
+        self.scroll_wait = 2000          # 2 seconds between scrolls
+        self.max_scrolls = 15            # Enough for most collections
+        self.total_timeout = 120         # 2 minutes total guardrail
     def extract_collection(self, url):
         """
         Extracts all video URLs from a TikTok shared collection.
@@ -47,30 +48,51 @@ class TikTokCollectionExtractor:
                 # Apply stealth plugin to avoid detection
                 Stealth().apply_stealth_sync(page)
 
-                logger.info(f"Navigating to TikTok collection: {url}")
-                page.goto(url, wait_until="networkidle", timeout=self.navigation_timeout)
+                logger.info(f"Navigating to TikTok collection (wait_until=domcontentloaded): {url}")
+                page.goto(url, wait_until="domcontentloaded", timeout=self.navigation_timeout)
                 
-                # Wait briefly to ensure UI components are loaded
-                page.wait_for_timeout(2000)
+                # Check for captcha or blocking page
+                page.wait_for_timeout(3000)
+                page_content = page.content().lower()
+                if "verify" in page_content and ("human" in page_content or "captcha" in page_content):
+                    logger.error("TikTok block detected: Captcha/Verification required.")
+                    return {
+                        "success": False,
+                        "error": "Access was blocked by TikTok (Captcha required). Please try again later or use a proxy."
+                    }
                 
                 # Infinite scroll implementation to load all videos
-                logger.info("Starting infinite scroll to load all videos in the collection...")
-                previous_height = page.evaluate("document.body.scrollHeight")
+                logger.info("Starting infinite scroll extraction...")
+                previous_video_count = 0
                 
                 scroll_count = 0
-                max_scrolls = 20 # Guardrails to prevent infinite loop
+                start_time = time.time()
                 
-                while scroll_count < max_scrolls:
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    # Wait for network idle or a specific time for new items to load
-                    page.wait_for_timeout(2000)
-                    
-                    new_height = page.evaluate("document.body.scrollHeight")
-                    if new_height == previous_height:
-                        logger.info("Reached the bottom of the collection or no new items loaded.")
+                while scroll_count < self.max_scrolls:
+                    # Check for total timeout
+                    if time.time() - start_time > self.total_timeout:
+                        logger.warning("Extraction reached total timeout guardrail.")
                         break
+
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.wait_for_timeout(self.scroll_wait)
+                    
+                    # Instead of just height, check if we found more videos
+                    current_videos = page.query_selector_all('a[href*="/video/"]')
+                    current_count = len(current_videos)
+                    
+                    logger.info(f"Scroll {scroll_count + 1}: Found {current_count} videos.")
+                    
+                    if current_count == previous_video_count and current_count > 0:
+                        # We might have reached the end if count didn't increase
+                        # Wait one more time just to be sure
+                        page.wait_for_timeout(1000)
+                        current_videos = page.query_selector_all('a[href*="/video/"]')
+                        if len(current_videos) == current_count:
+                            logger.info("No more videos loading. Stopping scroll.")
+                            break
                         
-                    previous_height = new_height
+                    previous_video_count = current_count
                     scroll_count += 1
                 
                 logger.info(f"Completed {scroll_count} scrolls. Extracting video links...")

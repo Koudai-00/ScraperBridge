@@ -8,4 +8,4 @@ RUN playwright install chromium
 RUN playwright install-deps chromium
 COPY . .
 ENV PORT=8080
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 main:app
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 -c gunicorn.conf.py main:app
