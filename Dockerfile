@@ -3,7 +3,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Playwrightブラウザと依存パッケージのインストール (Cloud Run用)
+# Playwrightブラウザと依存パッケージのインストール (Cloud Run用のパッケージ)
 RUN playwright install chromium
 RUN playwright install-deps chromium
 COPY . .
