@@ -261,6 +261,7 @@ def get_metadata_v2():
         "authorName": "Channel Name"
     }
     """
+    print(f"--- LOG: 1. [/api/v2/get-metadata] Request Received ---", flush=True)
     try:
         # Get JSON data from request
         data = request.get_json()
@@ -271,10 +272,14 @@ def get_metadata_v2():
         url = data['url']
         logging.info(f"Processing URL: {url}")
 
+        print(f"--- LOG: 2. [/api/v2/get-metadata] Starting Extractor ---", flush=True)
         # Extract metadata using the extractor
         metadata = extractor.extract_metadata(url)
+        print(f"--- LOG: 3. [/api/v2/get-metadata] Extractor Finished ---", flush=True)
 
         logging.info(f"Extracted metadata: {metadata}")
+        
+        print(f"--- LOG: 4. [/api/v2/get-metadata] Process Completed ---", flush=True)
         return jsonify(metadata), 200
 
     except ValueError as e:
@@ -761,6 +766,7 @@ def extract_recipe():
         "cost_usd": 0.00123
     }
     """
+    print(f"--- LOG: 1. [/api/extract-recipe] Request Received ---", flush=True)
     try:
         data = request.get_json()
 
@@ -822,6 +828,7 @@ def extract_recipe():
                         """, (user_id, platform, unique_video_id, 'CACHE_HIT', recipe_id, 0))
                         conn.commit()
 
+                        print(f"--- LOG: 4. [/api/extract-recipe] Process Completed (Cache Hit) ---", flush=True)
                         return jsonify({
                             'success': True,
                             'recipe_text': recipe_text,
@@ -835,9 +842,11 @@ def extract_recipe():
 
         # キャッシュなし - 新規抽出
         logging.info("No cache found, extracting recipe...")
+        print(f"--- LOG: 2. [/api/extract-recipe] Starting Extractor ---", flush=True)
 
         try:
             result = recipe_extractor.extract_recipe(video_url)
+            print(f"--- LOG: 3. [/api/extract-recipe] Extractor Finished ---", flush=True)
 
             recipe_text = result['recipe_text']
             extraction_method = result['extraction_method']
@@ -887,6 +896,7 @@ def extract_recipe():
 
                     conn.commit()
 
+            print(f"--- LOG: 4. [/api/extract-recipe] Process Completed ---", flush=True)
             return jsonify({
                 'success': True,
                 'recipe_text': recipe_text,
@@ -901,6 +911,7 @@ def extract_recipe():
         except ValueError as ve:
             # レシピが見つからない、またはサポートされていないプラットフォーム
             logging.warning(f"Recipe extraction failed: {ve}")
+            print(f"--- LOG: 4. [/api/extract-recipe] Process Failed (ValueError) ---", flush=True)
 
             # エラーログを記録
             with get_db_connection() as conn:
@@ -917,6 +928,7 @@ def extract_recipe():
 
     except Exception as e:
         logging.error(f"Unexpected error in recipe extraction: {e}")
+        print(f"--- LOG: 4. [/api/extract-recipe] Process Failed (Exception) ---", flush=True)
 
         # エラーログを記録（可能なら）
         try:
@@ -1124,6 +1136,7 @@ def extract_collection_metadata():
     import tempfile
     import os as os_module
     
+    print(f"--- LOG: 1. [/api/extract-collection-metadata] Request Received ---", flush=True)
     try:
         # ファイルが送信されているか確認
         if 'file' not in request.files:
@@ -1266,6 +1279,7 @@ def extract_collection_metadata():
             }), 400
         
         logging.info(f"Found {len(urls)} Instagram URLs in collection '{collection_name}'")
+        print(f"--- LOG: 2. [/api/extract-collection-metadata] Starting Batch Extractor for {len(urls)} URLs ---", flush=True)
         
         # 各URLに対してメタデータを取得
         results = []
@@ -1296,6 +1310,8 @@ def extract_collection_metadata():
                 })
                 failed_count += 1
         
+        print(f"--- LOG: 3. [/api/extract-collection-metadata] Extractor Finished. Success: {successful_count}, Failed: {failed_count} ---", flush=True)
+        print(f"--- LOG: 4. [/api/extract-collection-metadata] Process Completed ---", flush=True)
         return jsonify({
             'success': True,
             'collection_name': collection_name,
@@ -1455,6 +1471,7 @@ def extract_recipe_from_image():
         "error": "エラーメッセージ"
     }
     """
+    print(f"--- LOG: 1. [/api/v1/extract-recipe-from-image] Request Received ---", flush=True)
     try:
         if 'image' not in request.files:
             return jsonify({
@@ -1506,10 +1523,13 @@ def extract_recipe_from_image():
             }), 400
         
         user_id = request.form.get('user_id')
+        print(f"--- LOG: 2. [/api/v1/extract-recipe-from-image] Starting Image Extractor ---", flush=True)
         
         try:
             result = recipe_extractor.extract_recipe_from_image(image_data, mime_type)
+            print(f"--- LOG: 3. [/api/v1/extract-recipe-from-image] Extractor Finished ---", flush=True)
             
+            print(f"--- LOG: 4. [/api/v1/extract-recipe-from-image] Process Completed ---", flush=True)
             return jsonify({
                 'success': True,
                 'dish_name': result.get('dish_name'),
