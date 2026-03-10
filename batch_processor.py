@@ -137,6 +137,7 @@ class BatchProcessor:
                                             url,
                                             embed_code
                                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                        ON CONFLICT (unique_video_id, period_type) DO NOTHING
                                     """, batch_data)
                                     total_inserted += len(batch_data)
                                     logging.info(f"Inserted batch of {len(batch_data)} items, total: {total_inserted}")
@@ -164,6 +165,7 @@ class BatchProcessor:
                                 url,
                                 embed_code
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (unique_video_id, period_type) DO NOTHING
                         """, batch_data)
                         total_inserted += len(batch_data)
                         logging.info(f"Inserted final batch of {len(batch_data)} items")
