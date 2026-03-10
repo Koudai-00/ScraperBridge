@@ -1,7 +1,15 @@
 import json
 import logging
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-from playwright_stealth import Stealth
+
+try:
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+    from playwright_stealth import Stealth
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    sync_playwright = None
+    PlaywrightTimeoutError = TimeoutError
+    Stealth = None
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +25,12 @@ class TikTokCollectionExtractor:
         Extracts all video URLs from a TikTok shared collection.
         Uses Playwright to render the page and infinite scroll to load all videos.
         """
+        if not PLAYWRIGHT_AVAILABLE:
+            return {
+                "success": False,
+                "error": "Playwright is not installed. TikTok collection extraction is unavailable."
+            }
+
         if not url or "tiktok.com" not in url or "/collection/" not in url:
             return {
                 "success": False,
