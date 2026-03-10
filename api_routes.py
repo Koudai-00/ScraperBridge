@@ -675,15 +675,14 @@ def manual_ranking_update():
                     }), 200
                 elif isinstance(result, dict):
                     # 辞書形式のエラーレスポンス
+                    error_detail = result.get('error') or result.get('message') or 'ランキング更新処理が失敗しました'
                     logging.error(
-                        f"Manual ranking update failed: {result.get('error')}")
+                        f"Manual ranking update failed: {error_detail}")
                     return jsonify({
-                        'success':
-                        False,
-                        'error':
-                        result.get('error', 'ランキング更新処理が失敗しました'),
-                        'execution_time':
-                        result.get('execution_time', execution_time)
+                        'success': False,
+                        'error': error_detail,
+                        'technical_error': result.get('technical_error'),
+                        'execution_time': result.get('execution_time', execution_time)
                     }), 500
                 else:
                     # 従来のbool型レスポンス

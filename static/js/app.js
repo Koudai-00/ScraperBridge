@@ -328,12 +328,12 @@ class MetadataExtractor {
             if (response.ok && result.success) {
                 this.showRankingSuccess(result);
             } else {
-                this.showRankingError(result.error || 'ランキング処理でエラーが発生しました');
+                this.showRankingError(result);
             }
 
         } catch (error) {
             console.error('Ranking test error:', error);
-            this.showRankingError(`処理エラー: ${error.message}`);
+            this.showRankingError({ error: `処理エラー: ${error.message}` });
         } finally {
             this.hideRankingProgress();
         }
@@ -373,13 +373,43 @@ class MetadataExtractor {
         this.rankingTime.textContent = `実行時刻: ${new Date().toLocaleString('ja-JP')}`;
     }
 
-    showRankingError(errorMsg) {
+    showRankingError(result) {
+        const errorMsg = result.error || result.message || 'ランキング処理でエラーが発生しました';
+        const technicalError = result.technical_error || null;
+        const executionTime = result.execution_time != null ? `${result.execution_time}秒` : null;
+
         this.rankingResultSection.style.display = 'block';
         this.rankingAlert.className = 'alert alert-danger mb-0';
         this.rankingIcon.className = 'fas fa-exclamation-triangle me-2';
         this.rankingStatus.textContent = '❌ 異常終了';
         this.rankingMessage.textContent = `エラー: ${errorMsg}`;
-        this.rankingTime.textContent = `実行時刻: ${new Date().toLocaleString('ja-JP')}`;
+
+        let timeText = `実行時刻: ${new Date().toLocaleString('ja-JP')}`;
+        if (executionTime) timeText += ` （実行時間: ${executionTime}）`;
+        this.rankingTime.textContent = timeText;
+
+        const existingDetail = document.getElementById('rankingTechnicalDetail');
+        if (existingDetail) existingDetail.remove();
+
+        if (technicalError) {
+            const detail = document.createElement('div');
+            detail.id = 'rankingTechnicalDetail';
+            detail.className = 'mt-2';
+            detail.innerHTML = `
+                <div class="small text-danger-emphasis fw-semibold mb-1">
+                    <i class="fas fa-bug me-1"></i>技術的なエラーログ:
+                </div>
+                <pre class="bg-dark text-danger-emphasis border border-danger rounded p-2 small mb-0" style="white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto;">${this.escapeHtml(technicalError)}</pre>`;
+            this.rankingAlert.appendChild(detail);
+        }
+    }
+
+    escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 }
 

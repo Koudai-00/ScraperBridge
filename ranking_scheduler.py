@@ -172,12 +172,13 @@ class RankingScheduler:
             else:
                 return {
                     'success': False,
-                    'message': 'Ranking update failed'
+                    'error': 'ランキング更新処理が失敗しました'
                 }
                 
         except Exception as e:
             logging.error(f"Error in manual ranking update: {e}")
             return {
                 'success': False,
-                'message': f'Error: {str(e)}'
+                'error': f'ランキング更新中にエラーが発生しました',
+                'technical_error': str(e)
             }
