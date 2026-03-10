@@ -30,6 +30,11 @@ Preferred communication style: Simple, everyday language.
 - **Recipe Refinement**: Uses Gemini to refine extracted recipes from descriptions/comments, removing promotional content and structuring output into JSON.
 - **Ingredient Structure**: Extracts ingredients with separate `name`, `amount`, `unit`, `sub_amount`, and `sub_unit` fields. The `sub_amount`/`sub_unit` pair holds weight conversion data (e.g., "ズッキーニ1本(200g)" → amount="1", unit="本", sub_amount="200", sub_unit="g").
 
+### Ranking System
+- **Scheduled Execution**: Daily ranking updates are triggered by **Google Cloud Scheduler** via HTTP POST to `/api/rankings/update`. APScheduler (in-process) has been removed as it is unreliable on Cloud Run (scales to zero, multiple instances).
+- **Period Logic**: Rankings are calculated using `datetime.now()` at execution time. `daily` = past 24h, `weekly` = past 7 days, `monthly` = past 30 days, `all_time` = no date filter.
+- **Top 100 per period**: Only the top 100 videos per period are stored in the database.
+
 ### System Design Choices
 - **Error Handling**: Structured error responses with appropriate HTTP status codes and input validation.
 - **Logging**: Debug-level logging for request tracking and troubleshooting.

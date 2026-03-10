@@ -597,32 +597,15 @@ def get_ranking_stats():
     }
     """
     try:
-        from flask import current_app
         from batch_processor import BatchProcessor
 
-        # Get ranking statistics
         batch_processor = BatchProcessor()
         stats = batch_processor.get_ranking_stats()
-
-        # Get scheduler status if available
-        scheduler_status = {"running": False, "next_job": None}
-        try:
-            from app import app as main_app
-            if hasattr(main_app,
-                       'ranking_scheduler') and main_app.ranking_scheduler:
-                job_status = main_app.ranking_scheduler.get_job_status()
-        except:
-            job_status = {}
-            scheduler_status = {
-                "running": job_status.get('scheduler_running', False),
-                "jobs": job_status.get('jobs', {})
-            }
 
         return jsonify({
             "periods": stats.get('periods', {}),
             "platforms": stats.get('platforms', {}),
-            "total_rankings": stats.get('total_rankings', 0),
-            "scheduler_status": scheduler_status
+            "total_rankings": stats.get('total_rankings', 0)
         }), 200
 
     except Exception as e:
@@ -642,92 +625,53 @@ def manual_ranking_update():
         "stats": {...}
     }
     """
+    import time
+    start_time = time.time()
+
     try:
-        from flask import current_app
+        from batch_processor import BatchProcessor
 
-        import time
-        start_time = time.time()
+        batch_processor = BatchProcessor()
+        success = batch_processor.run_daily_ranking_batch()
+        execution_time = round(time.time() - start_time, 2)
 
-        try:
-            from app import app as main_app
-            if hasattr(main_app,
-                       'ranking_scheduler') and main_app.ranking_scheduler:
-                result = main_app.ranking_scheduler.run_manual_update()
-
-                end_time = time.time()
-                execution_time = round(end_time - start_time, 2)
-
-                if isinstance(result, dict) and result.get('success'):
-                    # 統計情報を取得
-                    stats = main_app.ranking_scheduler.batch_processor.get_ranking_stats(
-                    )
-                    logging.info(
-                        f"Manual ranking update completed successfully")
-                    return jsonify({
-                        'success':
-                        True,
-                        'message':
-                        result.get('message', 'ランキング更新が正常に完了しました'),
-                        'execution_time':
-                        result.get('execution_time', execution_time),
-                        'stats':
-                        stats
-                    }), 200
-                elif isinstance(result, dict):
-                    # 辞書形式のエラーレスポンス
-                    error_detail = result.get('error') or result.get('message') or 'ランキング更新処理が失敗しました'
-                    logging.error(
-                        f"Manual ranking update failed: {error_detail}")
-                    return jsonify({
-                        'success': False,
-                        'error': error_detail,
-                        'technical_error': result.get('technical_error'),
-                        'execution_time': result.get('execution_time', execution_time)
-                    }), 500
-                else:
-                    # 従来のbool型レスポンス
-                    logging.error(
-                        f"Manual ranking update failed after {execution_time}s"
-                    )
-                    return jsonify({
-                        'success': False,
-                        'error': 'ランキング更新処理が失敗しました',
-                        'execution_time': execution_time
-                    }), 500
-            else:
-                return jsonify({
-                    "success": False,
-                    "error": "ランキングスケジューラが利用できません"
-                }), 503
-
-        except Exception as scheduler_error:
-            end_time = time.time()
-            execution_time = round(end_time - start_time, 2)
-            error_msg = str(scheduler_error)
-            logging.error(
-                f"Scheduler access error after {execution_time}s: {error_msg}")
-
-            # エラーの種類に応じて詳細メッセージを作成
-            if "timeout" in error_msg.lower():
-                detailed_error = "処理がタイムアウトしました。大量のデータ処理中の可能性があります。"
-            elif "database" in error_msg.lower(
-            ) or "connection" in error_msg.lower():
-                detailed_error = "データベース接続エラーが発生しました。"
-            elif "memory" in error_msg.lower():
-                detailed_error = "メモリ不足エラーが発生しました。"
-            else:
-                detailed_error = f"予期しないエラーが発生しました: {error_msg}"
-
+        if success:
+            stats = batch_processor.get_ranking_stats()
+            logging.info(f"Ranking update completed successfully in {execution_time}s")
+            return jsonify({
+                'success': True,
+                'message': 'ランキング更新が正常に完了しました',
+                'execution_time': execution_time,
+                'stats': stats
+            }), 200
+        else:
+            logging.error(f"Ranking update failed after {execution_time}s")
             return jsonify({
                 'success': False,
-                'error': detailed_error,
-                'technical_error': error_msg,
+                'error': 'ランキング更新処理が失敗しました',
                 'execution_time': execution_time
             }), 500
 
     except Exception as e:
-        logging.error(f"Error in manual ranking update: {e}")
-        return jsonify({"success": False, "message": f"Error: {str(e)}"}), 500
+        execution_time = round(time.time() - start_time, 2)
+        error_msg = str(e)
+        logging.error(f"Ranking update error after {execution_time}s: {error_msg}")
+
+        if "timeout" in error_msg.lower():
+            detailed_error = "処理がタイムアウトしました。"
+        elif "database" in error_msg.lower() or "connection" in error_msg.lower():
+            detailed_error = "データベース接続エラーが発生しました。"
+        elif "memory" in error_msg.lower():
+            detailed_error = "メモリ不足エラーが発生しました。"
+        else:
+            detailed_error = "予期しないエラーが発生しました。"
+
+        return jsonify({
+            'success': False,
+            'error': detailed_error,
+            'technical_error': error_msg,
+            'execution_time': execution_time
+        }), 500
 
 
 @api_bp.route('/health', methods=['GET'])
