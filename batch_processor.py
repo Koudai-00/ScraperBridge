@@ -35,10 +35,8 @@ class BatchProcessor:
         try:
             # Step 1: 全期間のランキングを計算（制限を小さくしてタイムアウト回避）
             logging.info("Step 1: Calculating rankings for all periods")
-            # 環境に応じた制限値を動的設定
-            env = os.getenv("FLASK_ENV", "development")
-            limit = 200 if env == "production" else 50  # 本番では200位、開発では50位
-            ranking_data = self.ranking_calculator.get_top_video_ids_by_periods(limit=limit)
+            # 各期間の上位100件のみ登録
+            ranking_data = self.ranking_calculator.get_top_video_ids_by_periods(limit=100)
             
             if not any(ranking_data.values()):
                 logging.warning("No ranking data calculated - skipping batch process")
