@@ -626,8 +626,38 @@ def manual_ranking_update():
     }
     """
     import time
-    start_time = time.time()
+    import threading
 
+    # Cloud Schedulerからのリクエストは即時202を返してバックグラウンドで処理
+    user_agent = request.headers.get('User-Agent', '')
+    is_scheduler = 'Google-Cloud-Scheduler' in user_agent
+
+    def run_batch():
+        try:
+            from batch_processor import BatchProcessor
+            start = time.time()
+            batch_processor = BatchProcessor()
+            success = batch_processor.run_daily_ranking_batch()
+            elapsed = round(time.time() - start, 2)
+            if success:
+                logging.info(f"Background ranking update completed in {elapsed}s")
+            else:
+                logging.error(f"Background ranking update failed after {elapsed}s")
+        except Exception as e:
+            logging.error(f"Background ranking update error: {e}")
+
+    if is_scheduler:
+        # Cloud Schedulerの場合: 即時202を返してバックグラウンドで実行
+        t = threading.Thread(target=run_batch, daemon=True)
+        t.start()
+        logging.info("Ranking update started in background (Cloud Scheduler request)")
+        return jsonify({
+            'success': True,
+            'message': 'ランキング更新をバックグラウンドで開始しました'
+        }), 202
+
+    # UI手動実行の場合: 同期実行して結果を返す
+    start_time = time.time()
     try:
         from batch_processor import BatchProcessor
 
