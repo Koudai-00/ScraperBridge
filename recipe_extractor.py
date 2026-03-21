@@ -1346,7 +1346,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                     download_url = apify_download_url
                     logging.info(f"Using Apify download URL for {platform}")
                 else:
-                    logging.warning(f"Failed to get download URL from Apify for {platform}, trying direct download")
+                    logging.error(f"Failed to get download URL from Apify for {platform}. Please verify APIFY_API_TOKEN. yt-dlp direct download will likely fail on Cloud Run.")
 
             logging.info(f"Downloading video from URL: {download_url}")
             ydl_opts = {
@@ -1463,7 +1463,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                     download_url = apify_download_url
                     logging.info(f"Using Apify download URL for {platform}")
                 else:
-                    logging.warning(f"Failed to get download URL from Apify for {platform}, trying direct download")
+                    logging.error(f"Failed to get download URL from Apify for {platform}. Please verify APIFY_API_TOKEN. yt-dlp direct download will likely fail on Cloud Run.")
 
             logging.info(f"Downloading video from URL: {download_url}")
             ydl_opts = {
