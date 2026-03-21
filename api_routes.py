@@ -1591,6 +1591,8 @@ def test_extract_recipe():
                 'steps': parsed['steps'],
                 'tips': parsed['tips'],
                 'extraction_method': result['extraction_method'],
+                'download_method': result.get('download_method'),
+                'diagnostics': result.get('diagnostics'),
                 'extraction_flow': result.get('extraction_flow', ''),
                 'ai_model': result.get('ai_model'),
                 'tokens_used': result.get('tokens_used', 0),

@@ -636,6 +636,9 @@ class RecipeExtractorTest {
         this.refinementErrorSection = document.getElementById('refinementErrorSection');
         this.refinementErrorText = document.getElementById('refinementErrorText');
         this.extractionFlowText = document.getElementById('extractionFlowText');
+        this.downloadMethodText = document.getElementById('downloadMethodText');
+        this.diagnosticsSection = document.getElementById('diagnosticsSection');
+        this.diagnosticsText = document.getElementById('diagnosticsText');
         this.recipeTextDisplay = document.getElementById('recipeTextDisplay');
         this.ingredientsList = document.getElementById('ingredientsList');
         this.stepsList = document.getElementById('stepsList');
@@ -799,6 +802,19 @@ class RecipeExtractorTest {
             }
         }
 
+        // Display download method and diagnostics
+        if (this.downloadMethodText) {
+            this.downloadMethodText.textContent = result.download_method || '-';
+        }
+        if (this.diagnosticsSection && this.diagnosticsText) {
+            if (result.diagnostics) {
+                this.diagnosticsSection.style.display = 'block';
+                this.diagnosticsText.textContent = result.diagnostics;
+            } else {
+                this.diagnosticsSection.style.display = 'none';
+            }
+        }
+
         this.recipeTextDisplay.textContent = result.recipe_text;
 
         // Display structured ingredients
@@ -874,6 +890,9 @@ class RecipeExtractorTest {
         if (this.stepsList) this.stepsList.innerHTML = '';
         if (this.tipsSection) this.tipsSection.style.display = 'none';
         if (this.tipsText) this.tipsText.textContent = '';
+        if (this.downloadMethodText) this.downloadMethodText.textContent = '-';
+        if (this.diagnosticsSection) this.diagnosticsSection.style.display = 'none';
+        if (this.diagnosticsText) this.diagnosticsText.textContent = '';
     }
 }
 

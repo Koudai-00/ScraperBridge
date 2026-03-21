@@ -4,7 +4,7 @@ import re
 import time
 import json
 import requests
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 import google.generativeai as genai
 from bs4 import BeautifulSoup
 import pathlib
@@ -913,7 +913,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             logging.error(f"Error in OpenRouter auto refinement: {e}, falling back to Gemini")
             return self._refine_recipe_with_gemini(raw_recipe_text, 'gemini-2.0-flash-lite')
 
-    def _get_video_download_url_from_apify(self, video_url: str, platform: str) -> Optional[str]:
+    def _get_video_download_url_from_apify(self, video_url: str, platform: str) -> Tuple[Optional[str], str]:
         """
         Apify APIを使ってTikTok/Instagram動画のダウンロードURLを取得
 
@@ -922,11 +922,12 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             platform: 'tiktok' または 'instagram'
 
         Returns:
-            動画のダウンロードURL、取得失敗時はNone
+            (ダウンロードURL, 診断メッセージ)
         """
         if not self.apify_api_token:
-            logging.error("APIFY_API_TOKEN is not set")
-            return None
+            msg = "APIFY_API_TOKEN is not set"
+            logging.error(msg)
+            return None, msg
 
         try:
             # プラットフォームに応じたApify Actorとパラメータを設定
@@ -937,8 +938,9 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                 actor_id = 'apify/instagram-scraper'
                 payload = {'directUrls': [video_url]}
             else:
-                logging.error(f"Unsupported platform for Apify: {platform}")
-                return None
+                msg = f"Unsupported platform for Apify: {platform}"
+                logging.error(msg)
+                return None, msg
 
             # Apify APIエンドポイント（トークンをクエリパラメータで渡す）
             api_url = f"https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items?token={self.apify_api_token}"
@@ -951,15 +953,20 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             logging.debug(f"Apify request payload: {payload}")
 
             response = requests.post(api_url, headers=headers, json=payload, timeout=120)
-            response.raise_for_status()
+            
+            if response.status_code != 200 and response.status_code != 201:
+                msg = f"Apify API returned error: {response.status_code} - {response.text[:200]}"
+                logging.error(msg)
+                return None, msg
 
             data = response.json()
             logging.debug(f"Apify response data: {data}")
 
             # レスポンスから動画URLを抽出
-            if data and len(data) > 0:
+            if data and isinstance(data, list) and len(data) > 0:
                 item = data[0]
 
+                download_url = None
                 if platform == 'tiktok':
                     # TikTokの場合、複数の可能性のあるフィールドをチェック
                     download_url = (item.get('videoUrl') or 
@@ -973,18 +980,23 @@ amountには数値のみ、unitには単位のみを入れてください。「�
 
                 if download_url:
                     logging.info(f"Successfully got download URL from Apify: {download_url[:100]}...")
-                    return download_url
+                    return download_url, "Success"
                 else:
-                    logging.warning(f"No download URL found in Apify response. Item keys: {list(item.keys())}")
-
-            logging.warning(f"Could not extract download URL from Apify response for {platform}")
-            return None
+                    keys = list(item.keys())
+                    msg = f"No download URL found in Apify response. Available keys: {keys}"
+                    logging.warning(msg)
+                    return None, msg
+            
+            msg = f"Apify returned empty dataset for {platform}."
+            logging.warning(msg)
+            return None, msg
 
         except Exception as e:
-            logging.error(f"Error getting video download URL from Apify: {e}")
-            return None
+            msg = f"Error calling Apify API: {str(e)}"
+            logging.error(msg)
+            return None, msg
 
-    def _download_video(self, video_url: str, platform: str) -> str:
+    def _download_video(self, video_url: str, platform: str) -> Tuple[str, str, str]:
         """
         yt-dlpを使用して動画をダウンロード（TikTok/Instagramの場合はApifyへのフォールバックあり）
         
@@ -993,7 +1005,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             platform: 'tiktok', 'instagram', 'youtube' など
             
         Returns:
-            ダウンロードされたファイルの一時パス
+            (ダウンロードされたファイルの一時パス, ダウンロード手法, 診断情報)
         """
         ydl_opts = {
             'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
@@ -1009,31 +1021,42 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             },
         }
 
-        temp_video_path = None
+        diagnostics = []
         try:
             logging.info(f"Attempting direct download with yt-dlp: {video_url}")
+            diagnostics.append(f"1. Attempting direct download with yt-dlp...")
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info_dict = ydl.extract_info(video_url, download=True)
                 temp_video_path = ydl.prepare_filename(info_dict)
-                return temp_video_path
+                return temp_video_path, 'yt-dlp', "\n".join(diagnostics) + "\n-> Success"
         except Exception as e:
+            error_msg = str(e).split('\n')[0] # Get first line of error
+            diagnostics.append(f"1. Direct download failed: {error_msg}")
+            
             if platform in ['tiktok', 'instagram']:
                 logging.warning(f"Direct download failed for {platform}: {e}. Trying Apify fallback...")
-                apify_download_url = self._get_video_download_url_from_apify(video_url, platform)
+                diagnostics.append(f"2. Trying Apify fallback for {platform}...")
+                
+                apify_download_url, apify_msg = self._get_video_download_url_from_apify(video_url, platform)
+                
                 if apify_download_url:
+                    diagnostics.append(f"3. Apify returned URL: {apify_download_url[:60]}...")
                     logging.info(f"Attempting download with Apify URL: {apify_download_url[:100]}...")
                     try:
                         # ApifyのURLを使って再試行
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                             info_dict = ydl.extract_info(apify_download_url, download=True)
                             temp_video_path = ydl.prepare_filename(info_dict)
-                            return temp_video_path
+                            return temp_video_path, 'apify', "\n".join(diagnostics) + "\n-> Success via Apify"
                     except Exception as apify_e:
+                        apify_error = str(apify_e).split('\n')[0]
+                        diagnostics.append(f"4. Download with Apify URL also failed: {apify_error}")
                         logging.error(f"Download with Apify URL also failed: {apify_e}")
-                        raise apify_e
+                        raise Exception(f"yt-dlp and Apify both failed.\nDiagnostics:\n" + "\n".join(diagnostics))
                 else:
-                    logging.error(f"Apify fallback failed (no URL obtained or token not set). Original error: {e}")
-                    raise e
+                    diagnostics.append(f"3. Apify fallback failed: {apify_msg}")
+                    logging.error(f"Apify fallback failed: {apify_msg}")
+                    raise Exception(f"yt-dlp failed and Apify fallback failed ({apify_msg})")
             else:
                 logging.error(f"Direct download failed for {platform}: {e}")
                 raise e
@@ -1273,7 +1296,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                 direct_video_url = self._get_youtube_direct_url(video_url)
             elif platform in ['tiktok', 'instagram']:
                 logging.info(f"Detected {platform}, using Apify to get download URL...")
-                direct_video_url = self._get_video_download_url_from_apify(video_url, platform)
+                direct_video_url, _ = self._get_video_download_url_from_apify(video_url, platform)
             
             if not direct_video_url:
                 return {
@@ -1391,7 +1414,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             self._ensure_gemini_initialized()
 
             platform = self._detect_platform(video_url)
-            temp_video_path = self._download_video(video_url, platform)
+            temp_video_path, download_method, diagnostics = self._download_video(video_url, platform)
 
             if not temp_video_path or not os.path.exists(temp_video_path):
                 raise FileNotFoundError("Failed to download the video file.")
@@ -1452,6 +1475,8 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             return {
                 'recipe_text': recipe_text,
                 'extraction_method': 'ai_video',
+                'download_method': download_method,
+                'diagnostics': diagnostics,
                 'ai_model': model_name,
                 'tokens_used': tokens_info.get('total', 0),
                 'input_tokens': tokens_info.get('input', 0),
@@ -1481,7 +1506,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             self._ensure_gemini_initialized()
 
             platform = self._detect_platform(video_url)
-            temp_video_path = self._download_video(video_url, platform)
+            temp_video_path, download_method, diagnostics = self._download_video(video_url, platform)
 
             if not temp_video_path or not os.path.exists(temp_video_path):
                 raise FileNotFoundError("Failed to download the video file.")
@@ -1551,6 +1576,8 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             return {
                 'recipe_text': recipe_text,
                 'extraction_method': 'ai_video',
+                'download_method': download_method,
+                'diagnostics': diagnostics,
                 'ai_model': model_name,
                 'tokens_used': tokens_info.get('total', 0),
                 'input_tokens': tokens_info.get('input', 0),
