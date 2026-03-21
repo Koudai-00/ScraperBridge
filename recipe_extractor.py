@@ -932,10 +932,10 @@ amountには数値のみ、unitには単位のみを入れてください。「�
         try:
             # プラットフォームに応じたApify Actorとパラメータを設定
             if platform == 'tiktok':
-                actor_id = 'clockworks/free-tiktok-scraper'
+                actor_id = 'clockworks~free-tiktok-scraper'
                 payload = {'postURLs': [video_url]}
             elif platform == 'instagram':
-                actor_id = 'apify/instagram-scraper'
+                actor_id = 'apify~instagram-scraper'
                 payload = {'directUrls': [video_url]}
             else:
                 msg = f"Unsupported platform for Apify: {platform}"
