@@ -970,8 +970,9 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                 if platform == 'tiktok':
                     # TikTokの場合、複数の可能性のあるフィールドをチェック
                     download_url = (item.get('videoUrl') or 
-                                  item.get('video', {}).get('downloadAddr') or
-                                  item.get('video', {}).get('playAddr'))
+                                  item.get('videoMeta', {}).get('downloadAddr') or
+                                  item.get('videoMeta', {}).get('playAddr') or
+                                  (item.get('mediaUrls')[0] if item.get('mediaUrls') else None))
                 elif platform == 'instagram':
                     # Instagramの場合
                     download_url = (item.get('videoUrl') or 
