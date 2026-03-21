@@ -984,6 +984,60 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             logging.error(f"Error getting video download URL from Apify: {e}")
             return None
 
+    def _download_video(self, video_url: str, platform: str) -> str:
+        """
+        yt-dlpを使用して動画をダウンロード（TikTok/Instagramの場合はApifyへのフォールバックあり）
+        
+        Args:
+            video_url: 動画のURL
+            platform: 'tiktok', 'instagram', 'youtube' など
+            
+        Returns:
+            ダウンロードされたファイルの一時パス
+        """
+        ydl_opts = {
+            'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
+            'outtmpl': 'temp_video_%(id)s.%(ext)s',
+            'quiet': True,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'ios'],
+                }
+            },
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            },
+        }
+
+        temp_video_path = None
+        try:
+            logging.info(f"Attempting direct download with yt-dlp: {video_url}")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(video_url, download=True)
+                temp_video_path = ydl.prepare_filename(info_dict)
+                return temp_video_path
+        except Exception as e:
+            if platform in ['tiktok', 'instagram']:
+                logging.warning(f"Direct download failed for {platform}: {e}. Trying Apify fallback...")
+                apify_download_url = self._get_video_download_url_from_apify(video_url, platform)
+                if apify_download_url:
+                    logging.info(f"Attempting download with Apify URL: {apify_download_url[:100]}...")
+                    try:
+                        # ApifyのURLを使って再試行
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            info_dict = ydl.extract_info(apify_download_url, download=True)
+                            temp_video_path = ydl.prepare_filename(info_dict)
+                            return temp_video_path
+                    except Exception as apify_e:
+                        logging.error(f"Download with Apify URL also failed: {apify_e}")
+                        raise apify_e
+                else:
+                    logging.error(f"Apify fallback failed (no URL obtained or token not set). Original error: {e}")
+                    raise e
+            else:
+                logging.error(f"Direct download failed for {platform}: {e}")
+                raise e
+
     def _normalize_youtube_url(self, video_url: str) -> str:
         """YouTube URLを標準形式（watch形式）に変換"""
         video_id = self._extract_youtube_id(video_url)
@@ -1337,34 +1391,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             self._ensure_gemini_initialized()
 
             platform = self._detect_platform(video_url)
-
-            download_url = video_url
-            if platform in ['tiktok', 'instagram']:
-                logging.info(f"Detected {platform}, using Apify to get download URL...")
-                apify_download_url = self._get_video_download_url_from_apify(video_url, platform)
-                if apify_download_url:
-                    download_url = apify_download_url
-                    logging.info(f"Using Apify download URL for {platform}")
-                else:
-                    logging.error(f"Failed to get download URL from Apify for {platform}. Please verify APIFY_API_TOKEN. yt-dlp direct download will likely fail on Cloud Run.")
-
-            logging.info(f"Downloading video from URL: {download_url}")
-            ydl_opts = {
-                'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
-                'outtmpl': 'temp_video_%(id)s.%(ext)s',
-                'quiet': True,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android', 'ios'],
-                    }
-                },
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                },
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(download_url, download=True)
-                temp_video_path = ydl.prepare_filename(info_dict)
+            temp_video_path = self._download_video(video_url, platform)
 
             if not temp_video_path or not os.path.exists(temp_video_path):
                 raise FileNotFoundError("Failed to download the video file.")
@@ -1454,34 +1481,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             self._ensure_gemini_initialized()
 
             platform = self._detect_platform(video_url)
-
-            download_url = video_url
-            if platform in ['tiktok', 'instagram']:
-                logging.info(f"Detected {platform}, using Apify to get download URL...")
-                apify_download_url = self._get_video_download_url_from_apify(video_url, platform)
-                if apify_download_url:
-                    download_url = apify_download_url
-                    logging.info(f"Using Apify download URL for {platform}")
-                else:
-                    logging.error(f"Failed to get download URL from Apify for {platform}. Please verify APIFY_API_TOKEN. yt-dlp direct download will likely fail on Cloud Run.")
-
-            logging.info(f"Downloading video from URL: {download_url}")
-            ydl_opts = {
-                'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
-                'outtmpl': 'temp_video_%(id)s.%(ext)s',
-                'quiet': True,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android', 'ios'],
-                    }
-                },
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                },
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(download_url, download=True)
-                temp_video_path = ydl.prepare_filename(info_dict)
+            temp_video_path = self._download_video(video_url, platform)
 
             if not temp_video_path or not os.path.exists(temp_video_path):
                 raise FileNotFoundError("Failed to download the video file.")
