@@ -971,12 +971,14 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                 if platform == 'tiktok':
                     # TikTokの場合、複数の可能性のあるフィールドをチェック
                     media_urls = item.get('mediaUrls') or []
-                    download_url = (item.get('videoUrl') or
-                                  item.get('webVideoUrl') or
-                                  item.get('submittedVideoUrl') or
+                    download_url = (
                                   item.get('videoMeta', {}).get('downloadAddr') or
                                   item.get('videoMeta', {}).get('playAddr') or
-                                  (media_urls[0] if media_urls else None))
+                                  item.get('videoUrl') or
+                                  (media_urls[0] if media_urls else None) or
+                                  item.get('webVideoUrl') or
+                                  item.get('submittedVideoUrl')
+                    )
                 elif platform == 'instagram':
                     # Instagramの場合
                     download_url = (item.get('videoUrl') or 
@@ -1664,12 +1666,12 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                     ]
                 media_urls = item.get('mediaUrls') or []
                 result['video_url'] = (
-                    item.get('videoUrl') or
-                    item.get('webVideoUrl') or
-                    item.get('submittedVideoUrl') or
                     item.get('videoMeta', {}).get('downloadAddr') or
                     item.get('videoMeta', {}).get('playAddr') or
-                    (media_urls[0] if media_urls else None)
+                    item.get('videoUrl') or
+                    (media_urls[0] if media_urls else None) or
+                    item.get('webVideoUrl') or
+                    item.get('submittedVideoUrl')
                 )
 
             elif platform == 'instagram':
