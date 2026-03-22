@@ -1657,6 +1657,24 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             result = {'success': True, 'is_slideshow': False, 'image_links': [], 'video_url': None}
 
             if platform == 'tiktok':
+                # デバッグ: Apifyが返したURLフィールドをすべてログに出力
+                video_meta = item.get('videoMeta', {}) or {}
+                download_addr = video_meta.get('downloadAddr')
+                play_addr = video_meta.get('playAddr')
+                video_url_field = item.get('videoUrl')
+                web_video_url = item.get('webVideoUrl')
+                submitted_video_url = item.get('submittedVideoUrl')
+                media_urls = item.get('mediaUrls') or []
+                logging.info(
+                    f"[Apify TikTok fields] "
+                    f"downloadAddr={'YES('+str(len(download_addr))+'chars)' if download_addr else 'NONE'} | "
+                    f"playAddr={'YES' if play_addr else 'NONE'} | "
+                    f"videoUrl={'YES' if video_url_field else 'NONE'} | "
+                    f"webVideoUrl={'YES' if web_video_url else 'NONE'} | "
+                    f"submittedVideoUrl={'YES' if submitted_video_url else 'NONE'} | "
+                    f"mediaUrls={len(media_urls)} items | "
+                    f"isSlideshow={item.get('isSlideshow', False)}"
+                )
                 result['is_slideshow'] = item.get('isSlideshow', False)
                 if result['is_slideshow']:
                     slideshow_links = item.get('slideshowImageLinks', [])
@@ -1664,15 +1682,15 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                         img['downloadLink'] for img in slideshow_links
                         if img.get('downloadLink')
                     ]
-                media_urls = item.get('mediaUrls') or []
                 result['video_url'] = (
-                    item.get('videoMeta', {}).get('downloadAddr') or
-                    item.get('videoMeta', {}).get('playAddr') or
-                    item.get('videoUrl') or
+                    download_addr or
+                    play_addr or
+                    video_url_field or
                     (media_urls[0] if media_urls else None) or
-                    item.get('webVideoUrl') or
-                    item.get('submittedVideoUrl')
+                    web_video_url or
+                    submitted_video_url
                 )
+                logging.info(f"[Apify TikTok] Selected video_url: {str(result['video_url'])[:120] if result['video_url'] else 'NONE'}")
 
             elif platform == 'instagram':
                 video_url_ig = item.get('videoUrl')
@@ -1912,13 +1930,14 @@ amountには数値のみ、unitには単位のみを入れてください。「�
         if not apify_video_url:
             raise Exception(f"yt-dlp failed and Apify returned no video URL or images for {platform}")
 
-        logging.info(f"Attempting download with Apify URL: {apify_video_url[:100]}...")
+        logging.info(f"Attempting download with Apify URL: {apify_video_url[:120]}...")
 
         # CDN直URLかどうか判定
         # www.tiktok.com / www.instagram.com のウェブURLはGCPからブロックされるため、
         # それ以外のドメイン（v19-webapp.tiktok.com等）は直接requestsでダウンロード
         is_cdn_url = ('www.tiktok.com' not in apify_video_url and
                       'www.instagram.com' not in apify_video_url)
+        logging.info(f"[CDN check] is_cdn_url={is_cdn_url} for URL: {apify_video_url[:80]}")
 
         if is_cdn_url:
             logging.info(f"Detected CDN direct URL, downloading with requests (bypassing yt-dlp TikTok extractor)...")
