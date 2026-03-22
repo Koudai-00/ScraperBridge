@@ -1877,13 +1877,40 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                 except Exception as e:
                     logging.warning(f"Could not delete uploaded file {video_file.name}: {e}")
 
+    def _get_tikwm_video_url(self, video_url: str) -> Optional[str]:
+        """
+        tikwm.com の無料APIを使ってTikTok動画のダウンロードURLを取得する。
+        www.tikwm.com のURLを返すためCloud RunのGCPブロックを回避可能。
+        """
+        try:
+            logging.info(f"Trying tikwm.com API for: {video_url[:80]}...")
+            resp = requests.post(
+                'https://www.tikwm.com/api/',
+                data={'url': video_url, 'count': 12, 'cursor': 0, 'web': 1, 'hd': 1},
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'},
+                timeout=30
+            )
+            data = resp.json()
+            if data.get('code') == 0:
+                video_data = data.get('data', {})
+                play_path = video_data.get('hdplay') or video_data.get('play') or ''
+                if play_path:
+                    full_url = ('https://www.tikwm.com' + play_path
+                                if play_path.startswith('/') else play_path)
+                    logging.info(f"tikwm.com returned URL: {full_url[:100]}")
+                    return full_url
+            logging.warning(f"tikwm.com returned no URL: code={data.get('code')}, msg={data.get('msg')}")
+        except Exception as e:
+            logging.warning(f"tikwm.com API failed: {e}")
+        return None
+
     def _extract_recipe_from_tiktok_instagram_with_gemini(self, video_url: str, platform: str, model_name: str) -> Dict[str, Any]:
         """
         TikTok/Instagramから動画またはスライドショー画像でGeminiレシピ抽出。
         1. yt-dlpで直接ダウンロード試行
         2. 失敗時にApifyでコンテンツ情報を取得
         3. スライドショーの場合 → 画像解析
-        4. 動画の場合 → 動画解析
+        4. 動画の場合 → CDN直接ダウンロード or tikwm.com API (TikTok) or yt-dlp
         """
         ydl_opts = {
             'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
@@ -1963,7 +1990,34 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                     os.remove(cdn_temp_path)
                     logging.info(f"Deleted CDN temp file: {cdn_temp_path}")
 
-        # yt-dlpにフォールバック（CDN直接ダウンロード失敗時またはウェブURLの場合）
+        # 6. TikTokの場合 → tikwm.com APIでダウンロードURLを取得（GCPブロック回避）
+        if platform == 'tiktok':
+            tikwm_url = self._get_tikwm_video_url(video_url)
+            if tikwm_url:
+                tikwm_temp_path = None
+                try:
+                    import tempfile
+                    tikwm_headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    }
+                    logging.info(f"Downloading via tikwm.com: {tikwm_url[:100]}")
+                    tikwm_resp = requests.get(tikwm_url, headers=tikwm_headers, timeout=120, stream=True)
+                    tikwm_resp.raise_for_status()
+                    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as f:
+                        for chunk in tikwm_resp.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                        tikwm_temp_path = f.name
+                    file_size = os.path.getsize(tikwm_temp_path)
+                    logging.info(f"tikwm.com download successful: {tikwm_temp_path} ({file_size} bytes)")
+                    return self._analyze_video_file_with_gemini(tikwm_temp_path, 'tikwm', model_name)
+                except Exception as tikwm_err:
+                    logging.warning(f"tikwm.com download failed: {tikwm_err}")
+                finally:
+                    if tikwm_temp_path and os.path.exists(tikwm_temp_path):
+                        os.remove(tikwm_temp_path)
+                        logging.info(f"Deleted tikwm temp file: {tikwm_temp_path}")
+
+        # 7. 最終手段: yt-dlp（Replit環境など非GCPでは動作）
         temp_video_path = None
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
