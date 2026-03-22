@@ -1907,12 +1907,44 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             logging.info(f"Detected slideshow with {len(content_info['image_links'])} images, using image analysis...")
             return self._extract_recipe_from_slideshow_images(content_info['image_links'], model_name)
 
-        # 5. 動画URL → yt-dlpで再ダウンロード → Gemini動画解析
+        # 5. 動画URL取得 → CDN直接ダウンロードまたはyt-dlp → Gemini動画解析
         apify_video_url = content_info.get('video_url')
         if not apify_video_url:
             raise Exception(f"yt-dlp failed and Apify returned no video URL or images for {platform}")
 
         logging.info(f"Attempting download with Apify URL: {apify_video_url[:100]}...")
+
+        # CDN直URLかどうか判定
+        # www.tiktok.com / www.instagram.com のウェブURLはGCPからブロックされるため、
+        # それ以外のドメイン（v19-webapp.tiktok.com等）は直接requestsでダウンロード
+        is_cdn_url = ('www.tiktok.com' not in apify_video_url and
+                      'www.instagram.com' not in apify_video_url)
+
+        if is_cdn_url:
+            logging.info(f"Detected CDN direct URL, downloading with requests (bypassing yt-dlp TikTok extractor)...")
+            cdn_temp_path = None
+            try:
+                import tempfile
+                dl_headers = {
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                    'Referer': 'https://www.tiktok.com/',
+                }
+                response = requests.get(apify_video_url, headers=dl_headers, timeout=60, stream=True)
+                response.raise_for_status()
+                with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                    cdn_temp_path = f.name
+                logging.info(f"CDN direct download successful: {cdn_temp_path} ({os.path.getsize(cdn_temp_path)} bytes)")
+                return self._analyze_video_file_with_gemini(cdn_temp_path, 'apify-cdn', model_name)
+            except Exception as cdn_err:
+                logging.warning(f"CDN direct download failed: {cdn_err}, falling back to yt-dlp...")
+            finally:
+                if cdn_temp_path and os.path.exists(cdn_temp_path):
+                    os.remove(cdn_temp_path)
+                    logging.info(f"Deleted CDN temp file: {cdn_temp_path}")
+
+        # yt-dlpにフォールバック（CDN直接ダウンロード失敗時またはウェブURLの場合）
         temp_video_path = None
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
