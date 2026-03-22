@@ -3,6 +3,7 @@ import logging
 import re
 import time
 import json
+import base64
 import requests
 from typing import Optional, Dict, Any, List, Tuple
 import google.generativeai as genai
@@ -1289,12 +1290,12 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             logging.warning(f"Could not fetch {platform} description: {e}. Proceeding with video analysis.")
             extraction_flow.append("取得失敗")
 
-        # 動画解析はGemini API直接使用（gemini-2.0-flash-lite）
+        # 動画/画像解析（スライドショーの場合は画像解析に自動切替）
         video_model = 'gemini-2.0-flash-lite'
-        logging.info(f"No recipe in {platform} description, extracting from video using Gemini API ({video_model})...")
-        extraction_flow.append("動画解析")
-        
-        result = self._extract_recipe_with_gemini_model(video_url, video_model)
+        logging.info(f"No recipe in {platform} description, attempting media analysis with {video_model}...")
+        extraction_flow.append("動画/画像解析")
+
+        result = self._extract_recipe_from_tiktok_instagram_with_gemini(video_url, platform, video_model)
         extraction_flow.append("抽出成功")
         result['extraction_flow'] = ' → '.join(extraction_flow)
 
@@ -1619,6 +1620,310 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                 os.remove(temp_video_path)
                 logging.info(f"Deleted temp local file: {temp_video_path}")
 
+    def _get_apify_content_info(self, video_url: str, platform: str) -> Dict[str, Any]:
+        """
+        Apify APIを使ってTikTok/Instagramのコンテンツ情報を取得する。
+        動画URLまたはスライドショー画像リンクなどを返す。
+        """
+        if not self.apify_api_token:
+            return {'success': False, 'error': 'APIFY_API_TOKEN is not set'}
+
+        try:
+            if platform == 'tiktok':
+                actor_id = 'clockworks~free-tiktok-scraper'
+                payload = {'postURLs': [video_url]}
+            elif platform == 'instagram':
+                actor_id = 'apify~instagram-scraper'
+                payload = {'directUrls': [video_url]}
+            else:
+                return {'success': False, 'error': f'Unsupported platform: {platform}'}
+
+            api_url = f"https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items?token={self.apify_api_token}"
+            headers = {'Content-Type': 'application/json'}
+
+            logging.info(f"Getting content info from Apify for {platform}...")
+            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+
+            if response.status_code not in [200, 201]:
+                return {'success': False, 'error': f'Apify API error: {response.status_code}'}
+
+            data = response.json()
+            if not data or not isinstance(data, list) or len(data) == 0:
+                return {'success': False, 'error': 'Empty response from Apify'}
+
+            item = data[0]
+            result = {'success': True, 'is_slideshow': False, 'image_links': [], 'video_url': None}
+
+            if platform == 'tiktok':
+                result['is_slideshow'] = item.get('isSlideshow', False)
+                if result['is_slideshow']:
+                    slideshow_links = item.get('slideshowImageLinks', [])
+                    result['image_links'] = [
+                        img['downloadLink'] for img in slideshow_links
+                        if img.get('downloadLink')
+                    ]
+                media_urls = item.get('mediaUrls') or []
+                result['video_url'] = (
+                    item.get('videoUrl') or
+                    item.get('webVideoUrl') or
+                    item.get('submittedVideoUrl') or
+                    item.get('videoMeta', {}).get('downloadAddr') or
+                    item.get('videoMeta', {}).get('playAddr') or
+                    (media_urls[0] if media_urls else None)
+                )
+
+            elif platform == 'instagram':
+                video_url_ig = item.get('videoUrl')
+                display_url = item.get('displayUrl') or item.get('url')
+                images = item.get('images', [])
+                if not video_url_ig and (display_url or images):
+                    result['is_slideshow'] = True
+                    if images:
+                        result['image_links'] = images
+                    elif display_url:
+                        result['image_links'] = [display_url]
+                result['video_url'] = video_url_ig or display_url
+
+            return result
+
+        except Exception as e:
+            logging.error(f"Error getting Apify content info: {e}")
+            return {'success': False, 'error': str(e)}
+
+    def _extract_recipe_from_slideshow_images(self, image_urls: list, model_name: str) -> Dict[str, Any]:
+        """
+        スライドショーの画像リストからGeminiでレシピを抽出する。
+        最大8枚の画像をダウンロードしてGeminiに一括送信する。
+        """
+        self._ensure_gemini_initialized()
+
+        max_images = 8
+        image_parts = []
+
+        for i, img_url in enumerate(image_urls[:max_images]):
+            try:
+                logging.info(f"Downloading slideshow image {i + 1}/{min(len(image_urls), max_images)}: {img_url[:80]}...")
+                img_response = self.session.get(img_url, timeout=15)
+                img_response.raise_for_status()
+                content_type = img_response.headers.get('content-type', 'image/jpeg').split(';')[0].strip()
+                if not content_type.startswith('image/'):
+                    content_type = 'image/jpeg'
+                image_parts.append({
+                    'inline_data': {
+                        'mime_type': content_type,
+                        'data': base64.b64encode(img_response.content).decode('utf-8')
+                    }
+                })
+                logging.info(f"Downloaded image {i + 1} ({len(img_response.content)} bytes)")
+            except Exception as e:
+                logging.warning(f"Failed to download slideshow image {i + 1}: {e}")
+
+        if not image_parts:
+            raise ValueError("スライドショーの画像をダウンロードできませんでした")
+
+        prompt = """これらの画像はTikTokまたはInstagramの料理投稿のスライドショーです。
+画像からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位", "sub_amount": "重量換算の数量", "sub_unit": "重量換算の単位"}], "steps": ["手順1"], "tips": ["コツ1"]}
+
+材料のunitには以下のような適切な単位を設定してください：
+g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
+amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
+
+【重量換算（sub_amount / sub_unit）について】
+材料に「ズッキーニ1本(200g)」のように主単位と重量換算が併記されている場合：
+- amount: "1", unit: "本" （主単位）
+- sub_amount: "200", sub_unit: "g" （重量換算値）
+重量換算がない場合は sub_amount と sub_unit は空文字にしてください。
+
+画像にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。"""
+
+        model = genai.GenerativeModel(model_name)
+        contents = image_parts + [prompt]
+
+        logging.info(f"Sending {len(image_parts)} slideshow images to Gemini ({model_name})...")
+        response = model.generate_content(contents)
+
+        raw_text = response.text.strip()
+        logging.debug(f"Gemini slideshow response: {raw_text[:200]}...")
+
+        recipe_text = None
+        try:
+            json_text = re.sub(r'^```json\s*|\s*```$', '', raw_text, flags=re.MULTILINE).strip()
+            recipe_json = json.loads(json_text)
+            if recipe_json.get('error'):
+                raise ValueError("No recipe found in slideshow images")
+            if not recipe_json.get('ingredients') or not recipe_json.get('steps'):
+                raise json.JSONDecodeError("Missing required fields", json_text, 0)
+            recipe_text = self._convert_json_to_text(recipe_json)
+            logging.info("Successfully parsed JSON response from Gemini (slideshow)")
+        except json.JSONDecodeError:
+            logging.warning("Failed to parse JSON from slideshow, using text fallback")
+            recipe_text = self._clean_recipe_text(raw_text)
+
+        if "レシピが見つかりませんでした" in recipe_text:
+            raise ValueError("No recipe found in slideshow images")
+        if not self._validate_recipe_structure(recipe_text):
+            raise ValueError("Incomplete recipe in slideshow: missing ingredients or steps")
+
+        tokens_info = self._estimate_tokens(response)
+        return {
+            'recipe_text': recipe_text,
+            'extraction_method': 'ai_image',
+            'download_method': 'slideshow',
+            'diagnostics': f'Analyzed {len(image_parts)} slideshow images',
+            'ai_model': model_name,
+            'tokens_used': tokens_info.get('total', 0),
+            'input_tokens': tokens_info.get('input', 0),
+            'output_tokens': tokens_info.get('output', 0),
+            'refinement_status': 'not_applicable',
+            'refinement_error': None
+        }
+
+    def _analyze_video_file_with_gemini(self, video_path: str, download_method: str, model_name: str) -> Dict[str, Any]:
+        """ダウンロード済み動画ファイルをGeminiにアップロードしてレシピ解析する"""
+        video_file = None
+        try:
+            self._ensure_gemini_initialized()
+
+            logging.info("Uploading video file to Gemini...")
+            video_file = genai.upload_file(path=video_path)
+            while video_file.state.name == "PROCESSING":
+                time.sleep(2)
+                video_file = genai.get_file(video_file.name)
+            if video_file.state.name == "FAILED":
+                raise ValueError(f"Video processing failed on Google's server: {video_file.uri}")
+            logging.info("Video uploaded and processed.")
+
+            model = genai.GenerativeModel(model_name)
+            prompt = """
+この動画からレシピを抽出し、以下のJSON形式「のみ」で出力してください。前置きや説明文は一切不要です。
+{"ingredients": [{"name": "材料名", "amount": "数量", "unit": "単位", "sub_amount": "重量換算の数量", "sub_unit": "重量換算の単位"}], "steps": ["手順1"], "tips": ["コツ1"]}
+
+材料のunitには以下のような適切な単位を設定してください：
+g, kg, ml, L, 個, 本, 枚, 切れ, 片, 束, 袋, パック, 缶, 大さじ, 小さじ, カップ, 合, 適量, 少々, お好みで
+amountには数値のみ、unitには単位のみを入れてください。「適量」「少々」「お好みで」等の場合はamountを空文字、unitにその表現を入れてください。
+
+【重量換算（sub_amount / sub_unit）について】
+材料に「ズッキーニ1本(200g)」のように主単位と重量換算が併記されている場合：
+- amount: "1", unit: "本" （主単位）
+- sub_amount: "200", sub_unit: "g" （重量換算値）
+重量換算がない場合は sub_amount と sub_unit は空文字にしてください。
+
+動画にレシピが含まれていない場合のみ、{"error": "レシピが見つかりませんでした"}と返してください。
+"""
+            logging.info(f"Sending video to Gemini ({model_name})...")
+            response = model.generate_content([video_file, prompt])
+
+            raw_text = response.text.strip()
+            logging.debug(f"Gemini raw response: {raw_text[:200]}...")
+
+            recipe_text = None
+            try:
+                json_text = re.sub(r'^```json\s*|\s*```$', '', raw_text, flags=re.MULTILINE).strip()
+                recipe_json = json.loads(json_text)
+                if recipe_json.get('error'):
+                    raise ValueError("No recipe found in video")
+                if not recipe_json.get('ingredients') or not recipe_json.get('steps'):
+                    raise json.JSONDecodeError("Missing required fields", json_text, 0)
+                recipe_text = self._convert_json_to_text(recipe_json)
+                logging.info("Successfully parsed JSON response from Gemini")
+            except json.JSONDecodeError:
+                logging.warning("Failed to parse JSON, using text fallback")
+                recipe_text = self._clean_recipe_text(raw_text)
+
+            if "レシピが見つかりませんでした" in recipe_text:
+                raise ValueError("No recipe found in video")
+            if not self._validate_recipe_structure(recipe_text):
+                raise ValueError("Incomplete recipe: missing ingredients or steps")
+
+            tokens_info = self._estimate_tokens(response)
+            return {
+                'recipe_text': recipe_text,
+                'extraction_method': 'ai_video',
+                'download_method': download_method,
+                'diagnostics': f'Video analyzed via {download_method}',
+                'ai_model': model_name,
+                'tokens_used': tokens_info.get('total', 0),
+                'input_tokens': tokens_info.get('input', 0),
+                'output_tokens': tokens_info.get('output', 0),
+                'refinement_status': 'not_applicable',
+                'refinement_error': None
+            }
+        finally:
+            if video_file:
+                try:
+                    genai.delete_file(video_file.name)
+                    logging.info(f"Deleted uploaded file: {video_file.name}")
+                except Exception as e:
+                    logging.warning(f"Could not delete uploaded file {video_file.name}: {e}")
+
+    def _extract_recipe_from_tiktok_instagram_with_gemini(self, video_url: str, platform: str, model_name: str) -> Dict[str, Any]:
+        """
+        TikTok/Instagramから動画またはスライドショー画像でGeminiレシピ抽出。
+        1. yt-dlpで直接ダウンロード試行
+        2. 失敗時にApifyでコンテンツ情報を取得
+        3. スライドショーの場合 → 画像解析
+        4. 動画の場合 → 動画解析
+        """
+        ydl_opts = {
+            'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
+            'outtmpl': 'temp_video_%(id)s.%(ext)s',
+            'quiet': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            },
+        }
+
+        # 1. yt-dlpで直接ダウンロード試行
+        temp_video_path = None
+        try:
+            logging.info(f"Attempting direct download with yt-dlp: {video_url}")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(video_url, download=True)
+                temp_video_path = ydl.prepare_filename(info_dict)
+        except Exception as e:
+            logging.warning(f"yt-dlp direct download failed for {platform}: {str(e).split(chr(10))[0]}")
+
+        # 2. yt-dlp成功 → 動画をGeminiで解析
+        if temp_video_path and os.path.exists(temp_video_path):
+            try:
+                return self._analyze_video_file_with_gemini(temp_video_path, 'yt-dlp', model_name)
+            finally:
+                if os.path.exists(temp_video_path):
+                    os.remove(temp_video_path)
+                    logging.info(f"Deleted temp file: {temp_video_path}")
+
+        # 3. yt-dlp失敗 → Apifyでコンテンツ情報取得
+        logging.info(f"Fetching content info from Apify for {platform}...")
+        content_info = self._get_apify_content_info(video_url, platform)
+
+        if not content_info.get('success'):
+            raise Exception(f"yt-dlp failed and Apify also failed: {content_info.get('error')}")
+
+        # 4. スライドショー → 画像解析
+        if content_info.get('is_slideshow') and content_info.get('image_links'):
+            logging.info(f"Detected slideshow with {len(content_info['image_links'])} images, using image analysis...")
+            return self._extract_recipe_from_slideshow_images(content_info['image_links'], model_name)
+
+        # 5. 動画URL → yt-dlpで再ダウンロード → Gemini動画解析
+        apify_video_url = content_info.get('video_url')
+        if not apify_video_url:
+            raise Exception(f"yt-dlp failed and Apify returned no video URL or images for {platform}")
+
+        logging.info(f"Attempting download with Apify URL: {apify_video_url[:100]}...")
+        temp_video_path = None
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(apify_video_url, download=True)
+                temp_video_path = ydl.prepare_filename(info_dict)
+            return self._analyze_video_file_with_gemini(temp_video_path, 'apify', model_name)
+        except Exception as e:
+            raise Exception(f"yt-dlp and Apify both failed: {str(e).split(chr(10))[0]}")
+        finally:
+            if temp_video_path and os.path.exists(temp_video_path):
+                os.remove(temp_video_path)
+                logging.info(f"Deleted temp file: {temp_video_path}")
+
     def _extract_recipe_from_other_platform(self, video_url: str,
                                             platform: str) -> Dict[str, Any]:
         """TikTok/Instagramからレシピを抽出（OpenRouter自動フォールバック対応）"""
@@ -1673,20 +1978,20 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             )
             extraction_flow.append("取得失敗")
 
-        # 動画解析はGeminiを使用（OpenRouterは動画アップロード非対応）
+        # 動画/画像解析（スライドショーの場合は画像解析に自動切替）
         video_model = 'gemini-2.0-flash-lite'
         logging.info(
-            f"No recipe in {platform} description, attempting video analysis with {video_model}..."
+            f"No recipe in {platform} description, attempting media analysis with {video_model}..."
         )
-        extraction_flow.append("動画解析")
-        
-        result = self._extract_recipe_with_gemini_model(video_url, video_model)
+        extraction_flow.append("動画/画像解析")
+
+        result = self._extract_recipe_from_tiktok_instagram_with_gemini(video_url, platform, video_model)
         result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
-        
+
         # 翻訳が必要な場合は翻訳
         if result.get('recipe_text'):
             result = self._ensure_japanese_response(result)
-        
+
         return result
 
     def _estimate_tokens(self, response) -> Dict[str, int]:
