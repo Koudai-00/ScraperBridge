@@ -1183,19 +1183,23 @@ amountには数値のみ、unitには単位のみを入れてください。「�
         extraction_flow.append("説明欄をチェック")
         description_result = self._get_recipe_from_description(video_id, model_name)
         if description_result:
-            logging.info("Recipe found in description")
-            extraction_flow.append("キーワード検出 → AI抽出: 成功")
-            return {
-                'recipe_text': description_result.get('text', ''),
-                'extraction_method': 'description',
-                'extraction_flow': ' → '.join(extraction_flow),
-                'ai_model': description_result.get('model_used', model_name),
-                'tokens_used': description_result.get('refinement_tokens'),
-                'input_tokens': description_result.get('input_tokens'),
-                'output_tokens': description_result.get('output_tokens'),
-                'refinement_status': description_result.get('refinement_status', 'skipped'),
-                'refinement_error': description_result.get('refinement_error')
-            }
+            if description_result.get('refinement_status') == 'no_recipe':
+                logging.info("AI determined no recipe in description")
+                extraction_flow.append("レシピなし")
+            else:
+                logging.info("Recipe found in description")
+                extraction_flow.append("キーワード検出 → AI抽出: 成功")
+                return {
+                    'recipe_text': description_result.get('text', ''),
+                    'extraction_method': 'description',
+                    'extraction_flow': ' → '.join(extraction_flow),
+                    'ai_model': description_result.get('model_used', model_name),
+                    'tokens_used': description_result.get('refinement_tokens'),
+                    'input_tokens': description_result.get('input_tokens'),
+                    'output_tokens': description_result.get('output_tokens'),
+                    'refinement_status': description_result.get('refinement_status', 'skipped'),
+                    'refinement_error': description_result.get('refinement_error')
+                }
         else:
             extraction_flow.append("レシピなし")
 
@@ -1203,31 +1207,37 @@ amountには数値のみ、unitには単位のみを入れてください。「�
         extraction_flow.append("コメント欄をチェック")
         comment_result = self._get_recipe_from_comments(video_id, model_name)
         if comment_result:
-            logging.info("Recipe found in author's comment")
-            extraction_flow.append("キーワード検出 → AI抽出: 成功")
-            return {
-                'recipe_text': comment_result.get('text', ''),
-                'extraction_method': 'comment',
-                'extraction_flow': ' → '.join(extraction_flow),
-                'ai_model': comment_result.get('model_used', model_name),
-                'tokens_used': comment_result.get('refinement_tokens'),
-                'input_tokens': comment_result.get('input_tokens'),
-                'output_tokens': comment_result.get('output_tokens'),
-                'refinement_status': comment_result.get('refinement_status', 'skipped'),
-                'refinement_error': comment_result.get('refinement_error')
-            }
+            if comment_result.get('refinement_status') == 'no_recipe':
+                logging.info("AI determined no recipe in comment")
+                extraction_flow.append("レシピなし")
+            else:
+                logging.info("Recipe found in author's comment")
+                extraction_flow.append("キーワード検出 → AI抽出: 成功")
+                return {
+                    'recipe_text': comment_result.get('text', ''),
+                    'extraction_method': 'comment',
+                    'extraction_flow': ' → '.join(extraction_flow),
+                    'ai_model': comment_result.get('model_used', model_name),
+                    'tokens_used': comment_result.get('refinement_tokens'),
+                    'input_tokens': comment_result.get('input_tokens'),
+                    'output_tokens': comment_result.get('output_tokens'),
+                    'refinement_status': comment_result.get('refinement_status', 'skipped'),
+                    'refinement_error': comment_result.get('refinement_error')
+                }
         else:
             extraction_flow.append("レシピなし")
 
-        # 動画解析はGemini API直接使用（gemini-2.0-flash-lite）
-        video_model = 'gemini-2.0-flash-lite'
-        logging.info(f"Extracting recipe from video using Gemini API ({video_model})...")
+        # 動画解析はGemini API直接使用（gemini-2.5-flash-lite）- YouTube URLを直接渡す方式
+        video_model = 'gemini-2.5-flash-lite'
+        logging.info(f"Extracting recipe from YouTube video using URL-based Gemini API ({video_model})...")
         extraction_flow.append("動画解析")
-        
-        result = self._extract_recipe_with_gemini_model(video_url, video_model)
-        extraction_flow.append("抽出成功")
-        result['extraction_flow'] = ' → '.join(extraction_flow)
-        
+        result = self._extract_recipe_from_youtube_url(video_url, video_model)
+        result['extraction_flow'] = ' → '.join(extraction_flow) + ' → 抽出成功'
+
+        # 翻訳が必要な場合は翻訳
+        if result.get('recipe_text'):
+            result = self._ensure_japanese_response(result)
+
         return result
 
     def _extract_recipe_from_other_platform_with_model(self, video_url: str, platform: str, model_name: str) -> Dict[str, Any]:
@@ -1284,7 +1294,11 @@ amountには数値のみ、unitには単位のみを入れてください。「�
         result = self._extract_recipe_with_gemini_model(video_url, video_model)
         extraction_flow.append("抽出成功")
         result['extraction_flow'] = ' → '.join(extraction_flow)
-        
+
+        # 翻訳が必要な場合は翻訳
+        if result.get('recipe_text'):
+            result = self._ensure_japanese_response(result)
+
         return result
 
     def _extract_recipe_with_openrouter_video(self, video_url: str, model_name: str = None) -> Dict[str, Any]:
@@ -1643,6 +1657,8 @@ amountには数値のみ、unitには単位のみを入れてください。「�
                             'extraction_flow': ' → '.join(extraction_flow),
                             'ai_model': actual_model,
                             'tokens_used': refinement_result.get('refinement_tokens'),
+                            'input_tokens': refinement_result.get('input_tokens'),
+                            'output_tokens': refinement_result.get('output_tokens'),
                             'refinement_status': refinement_result.get('refinement_status', 'skipped'),
                             'refinement_error': refinement_result.get('refinement_error')
                         }
@@ -1655,7 +1671,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
             extraction_flow.append("取得失敗")
 
         # 動画解析はGeminiを使用（OpenRouterは動画アップロード非対応）
-        video_model = 'gemini-2.0-flash-exp'
+        video_model = 'gemini-2.0-flash-lite'
         logging.info(
             f"No recipe in {platform} description, attempting video analysis with {video_model}..."
         )
