@@ -261,7 +261,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
     def _extract_tiktok_id(self, url: str) -> str:
         """TikTok動画IDを抽出"""
         # 通常のURL形式
-        patterns = [r'/video/(\d+)', r'/v/(\d+)']
+        patterns = [r'/(?:video|photo|v)/(\d+)']
         for pattern in patterns:
             match = re.search(pattern, url)
             if match: return match.group(1)
@@ -1254,14 +1254,66 @@ amountには数値のみ、unitには単位のみを入れてください。「�
         logging.info(f"Attempting to extract recipe from {platform} description (using {model_name} for refinement)...")
         extraction_flow.append(f"{platform_name}説明欄をチェック")
         try:
-            response = self.session.get(video_url, timeout=10)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'html.parser')
-
             description = None
-            meta_description = soup.find('meta', property='og:description')
-            if meta_description and hasattr(meta_description, 'get'):
-                description = meta_description.get('content', '')
+            
+            # 1. TikTokの場合はまずoEmbed APIを試行
+            if platform == 'tiktok':
+                # 短縮URL(vt.tiktok.com)の場合は、まずリダイレクト先(フルURL)を取得する
+                final_url = video_url
+                if 'vt.tiktok.com' in video_url or 'lite.tiktok.com' in video_url:
+                    try:
+                        resp = self.session.head(video_url, allow_redirects=True, timeout=10)
+                        final_url = resp.url
+                        logging.info(f"Resolved TikTok short URL to: {final_url}")
+                    except Exception as e:
+                        logging.warning(f"Failed to resolve TikTok short URL: {e}")
+
+                clean_url = final_url.split('?')[0]
+                
+                # oEmbed APIは /photo/ URLを拒否することが多いため、/video/ に置換して試行する
+                oembed_target_url = clean_url.replace('/photo/', '/video/')
+                oembed_url = f"https://www.tiktok.com/oembed?url={oembed_target_url}"
+                
+                logging.info(f"Trying TikTok oEmbed API: {oembed_url}")
+                try:
+                    oembed_response = self.session.get(oembed_url, timeout=10)
+                    if oembed_response.status_code == 200:
+                        oembed_data = oembed_response.json()
+                        if oembed_data.get('title'):
+                            description = oembed_data.get('title', '')
+                            logging.info("Successfully extracted TikTok description using oEmbed API")
+                            extraction_flow.append("oEmbed API取得成功")
+                except Exception as oe:
+                    logging.warning(f"TikTok oEmbed API failed: {oe}")
+            
+            # 2. oEmbed APIで取得できなかった場合、または他のプラットフォームの場合はスクレイピング
+            if not description:
+                logging.info(f"Attempting generic scraping for {platform} description...")
+                response = self.session.get(video_url, timeout=10)
+                response.raise_for_status()
+                
+                # エンコーディング対応
+                response.encoding = response.apparent_encoding
+                soup = BeautifulSoup(response.content, 'html.parser')
+
+                # まずog:descriptionをチェック
+                meta_description = soup.find('meta', property='og:description')
+                if meta_description and hasattr(meta_description, 'get'):
+                    description = meta_description.get('content', '')
+                
+                # 取得できない場合のフォールバック（Twitterカードやtitleタグ）
+                if not description:
+                    twitter_desc = soup.find('meta', attrs={'name': 'twitter:description'})
+                    if twitter_desc and twitter_desc.get('content'):
+                        description = twitter_desc.get('content', '')
+                    elif platform == 'tiktok':
+                        title_tag = soup.find('title')
+                        if title_tag and title_tag.string:
+                            description = title_tag.string
+                            logging.info("Used title tag as fallback description")
+                
+                if description:
+                    extraction_flow.append("スクレイピング取得開始")
 
             if description and isinstance(description, str) and self._contains_recipe(description):
                 logging.info(f"Keyword found in {platform} description, sending to AI")
@@ -1655,6 +1707,7 @@ amountには数値のみ、unitには単位のみを入れてください。「�
 
             item = data[0]
             result = {'success': True, 'is_slideshow': False, 'image_links': [], 'video_url': None}
+            result['text'] = item.get('text', '')
 
             if platform == 'tiktok':
                 # デバッグ: Apifyが返したURLフィールドをすべてログに出力
@@ -1946,6 +1999,29 @@ amountには数値のみ、unitには単位のみを入れてください。「�
 
         if not content_info.get('success'):
             raise Exception(f"yt-dlp failed and Apify also failed: {content_info.get('error')}")
+
+        apify_text = content_info.get('text', '')
+        if apify_text and self._contains_recipe(apify_text):
+            logging.info("Found recipe keywords in Apify text, attempting text extraction...")
+            raw_recipe = self._extract_recipe_text(apify_text)
+            if raw_recipe:
+                refinement = self._refine_recipe_with_model(raw_recipe, model_name)
+                if refinement.get('refinement_status') != 'no_recipe':
+                    logging.info("Successfully extracted recipe from Apify text fallback")
+                    return {
+                        'recipe_text': refinement.get('text', ''),
+                        'extraction_method': 'description',
+                        'download_method': 'apify_text',
+                        'diagnostics': 'Extracted from Apify text fallback',
+                        'ai_model': refinement.get('model_used', model_name),
+                        'tokens_used': refinement.get('refinement_tokens', 0),
+                        'input_tokens': refinement.get('input_tokens', 0),
+                        'output_tokens': refinement.get('output_tokens', 0),
+                        'refinement_status': refinement.get('refinement_status', 'success'),
+                        'refinement_error': refinement.get('refinement_error')
+                    }
+
+        logging.info("No recipe found in Apify text, falling back to media analysis...")
 
         # 4. スライドショー → 画像解析
         if content_info.get('is_slideshow') and content_info.get('image_links'):

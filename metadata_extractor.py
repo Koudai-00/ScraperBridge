@@ -269,7 +269,7 @@ class MetadataExtractor:
     def _extract_tiktok_id(self, url: str) -> str:
         """Extract TikTok video ID from URL"""
         clean_url = url.split('?')[0]
-        match = re.search(r'\/video\/(\d+)', clean_url)
+        match = re.search(r'\/(?:video|photo|v)\/(\d+)', clean_url)
         return match.group(1) if match else ""
     
     def _get_tiktok_embed_code(self, url: str) -> str:

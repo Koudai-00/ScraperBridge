@@ -45,6 +45,8 @@ env/
 logs/
 attached_assets/Pasted-*.txt
 attached_assets/*.log
+gunicorn.ctl
+__pycache__/
 
 # Database
 *.db
